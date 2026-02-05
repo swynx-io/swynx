@@ -40,8 +40,9 @@ const ENTRY_POINT_PATTERNS = [
   /\.worker\.([mc]?[jt]s|[jt]sx)$/, /workers?\//,
   // Templates & fixtures
   /\/templates?\//, /\/fixtures\//, /^fixtures\//, /__fixtures__\//,
-  // Storybook
+  // Storybook and visual testing
   /\.stories\.([mc]?[jt]s|[jt]sx)$/,
+  /\/chromatic\//, /^chromatic\//,
   // Vitest/Playwright/Jest config
   /vitest\.workspace\.[mc]?[jt]s$/, /vitest\.config\.[mc]?[jt]s$/,
   /playwright\.config\.[mc]?[jt]s$/,
@@ -77,9 +78,13 @@ const ENTRY_POINT_PATTERNS = [
   /\/netlify\//, /^netlify\//, /\/vercel\//, /^vercel\//,
   /\/lambda\//, /^lambda\//, /\/functions\//, /^functions\//,
   // Codemods (standalone transformation scripts)
-  /\/codemods?\//, /^codemods?\//, /-codemod\//,
+  /\/codemods?\//, /^codemods?\//, /-codemod\//, /codemod/,
+  // Internal runtime/cache directories (build system files)
+  /\/cache-dir\//, /\/internal-plugins\//,
   // Frontend static/app directories (webpack/vite entry points)
   /\/static\/app\//, /\/static\/gs/,
+  // Ember.js frontend directories (convention-based loading)
+  /frontend\/[^/]+\/app\//, /frontend\/discourse/,
   // Generated/vendored code patterns
   /\/@generated\//, /\/_generated\//, /\/generated\//,
   // Examples, samples, debug, and documentation
@@ -129,8 +134,9 @@ const ENTRY_POINT_PATTERNS = [
   /\/languages?\/[^/]+\.(js|ts)$/, /\/lang\//, /^lang\//,
   /\/themes?\//, /^themes?\//,
   /\/grammars?\//, /^grammars?\//,
-  // Icon libraries (dynamically loaded by name)
+  // Icon and illustration libraries (dynamically loaded by name)
   /\/icons?\//, /-icons-/, /icons-material/,
+  /\/illustrations?\//, /spectrum-illustrations/,
   // PHP entry points
   /index\.php$/, /artisan$/, /composer\.json$/,
   /app\/Http\/Controllers\//, /app\/Models\//, /app\/Providers\//,
@@ -140,6 +146,9 @@ const ENTRY_POINT_PATTERNS = [
   // Ruby entry points
   /config\.ru$/, /Rakefile$/, /Gemfile$/,
   /\/homebrew\//, /^homebrew\//, /\.rb$.*homebrew/,
+  // Rails config and migrations
+  /config\/initializers\//, /config\/environments\//,
+  /db\/post_migrate\//, /db\/migrate\//,
   /app\/controllers\//, /app\/models\//, /app\/helpers\//,
   /app\/jobs\//, /app\/mailers\//, /app\/views\//,
   /config\/routes\.rb$/, /config\/application\.rb$/,
