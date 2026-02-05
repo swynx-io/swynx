@@ -2,8 +2,8 @@
 // API routes for Codebase Audit Dashboard
 
 import { Router } from 'express';
-// Use PEER Audit's full scanner for complete analysis
-import scanProject from '../../scanner/index.mjs';
+// Use Swynx scanner for dead code analysis
+import { scan as scanProject } from '../../scanner/index.mjs';
 import {
   initDatabase,
   saveScan,
@@ -697,10 +697,35 @@ export async function createRoutes() {
     };
 
     try {
-      // Run the scan with progress callback and performance settings
-      // Using PEER Audit's full scanner - returns complete analysis
+      // Run the scan with progress callback
       const workers = getSetting('performance.workers', 0) || undefined;
-      const scanResult = await scanProject(projectPath, { onProgress, workers });
+      const swynxResult = await scanProject(projectPath, { onProgress, workers });
+
+      // Adapt Swynx output to dashboard-compatible format
+      const deadRate = parseFloat(swynxResult.summary?.deadRate) || 0;
+      const scanResult = {
+        projectPath,
+        timestamp: new Date().toISOString(),
+        summary: {
+          totalFiles: swynxResult.summary?.totalFiles || 0,
+          wastePercent: deadRate,
+          wasteSizeBytes: swynxResult.summary?.totalDeadBytes || 0,
+          totalBytes: swynxResult.summary?.totalDeadBytes || 0, // approximate
+        },
+        deadCode: {
+          files: swynxResult.deadFiles || [],
+          summary: {
+            count: swynxResult.deadFiles?.length || 0,
+            sizeBytes: swynxResult.summary?.totalDeadBytes || 0,
+            sizeFormatted: `${((swynxResult.summary?.totalDeadBytes || 0) / 1024).toFixed(1)} KB`
+          }
+        },
+        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 }, vulnerabilities: [] },
+        outdated: { packages: [], summary: { total: 0 } },
+        emissions: { monthly: { kgCO2: 0 } },
+        entryPoints: swynxResult.entryPoints || [],
+        raw: swynxResult // Keep original for debugging
+      };
 
       await saveScan(scanResult);
 
