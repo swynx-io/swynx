@@ -39,7 +39,7 @@ function getPublicDir() {
   // Check common locations for public directory
   const locations = [
     join(DATA_DIR, 'public'),               // Primary: DATA_DIR/public (works for both systemd and user)
-    '/var/lib/peer-audit/public',           // Fallback: explicit systemd path
+    '/var/lib/swynx/public',                 // Fallback: explicit systemd path
     join(process.cwd(), 'src/dashboard/public'),
     join(process.cwd(), 'public'),
     join(dirname(process.argv[1]), 'public'),
