@@ -494,18 +494,19 @@ export async function createRoutes() {
   });
 
   router.post('/license/activate', (req, res) => {
-    const { key } = req.body || {};
-    if (!key) {
+    const { key, licenseKey } = req.body || {};
+    const licenseKeyValue = key || licenseKey;
+    if (!licenseKeyValue) {
       return res.status(400).json({ success: false, error: 'License key required' });
     }
 
-    const parsed = parseLicenseKey(key);
+    const parsed = parseLicenseKey(licenseKeyValue);
     if (!parsed) {
       return res.status(400).json({ success: false, error: 'Invalid license key format' });
     }
 
     const license = {
-      key,
+      key: licenseKeyValue,
       activatedAt: new Date().toISOString(),
       ...parsed
     };
