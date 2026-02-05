@@ -700,18 +700,36 @@ export async function createRoutes() {
       // Run the scan with progress callback
       const startTime = Date.now();
       const workers = getSetting('performance.workers', 0) || undefined;
-      const swynxResult = await scanProject(projectPath, { onProgress, workers });
+      console.log('[scan-stream] Starting scan for:', projectPath);
+
+      let swynxResult;
+      try {
+        swynxResult = await scanProject(projectPath, { onProgress, workers });
+      } catch (scanErr) {
+        console.error('[scan-stream] Scanner threw error:', scanErr?.message || scanErr);
+        throw new Error(`Scanner error: ${scanErr?.message || scanErr}`);
+      }
+
+      if (!swynxResult) {
+        console.error('[scan-stream] Scanner returned null/undefined result');
+        throw new Error('Scanner returned empty result');
+      }
+
       const duration = Date.now() - startTime;
+      console.log('[scan-stream] Scan completed in', duration, 'ms, processing results...');
 
       // Adapt Swynx output to dashboard-compatible format
       const deadRate = parseFloat(swynxResult.summary?.deadRate) || 0;
       const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const healthScore = Math.max(0, 100 - deadRate * 10);
+      // Calculate grade from score
+      const grade = healthScore >= 90 ? 'A' : healthScore >= 80 ? 'B' : healthScore >= 70 ? 'C' : healthScore >= 60 ? 'D' : 'F';
       const scanResult = {
         id: scanId,
         projectPath,
         scannedAt: new Date().toISOString(),
         duration,
-        healthScore: { score: Math.max(0, 100 - deadRate * 10) }, // Simple health score based on dead code %
+        healthScore: { score: healthScore, grade },
         summary: {
           totalFiles: swynxResult.summary?.totalFiles || 0,
           wastePercent: deadRate,
@@ -726,14 +744,21 @@ export async function createRoutes() {
             sizeFormatted: `${((swynxResult.summary?.totalDeadBytes || 0) / 1024).toFixed(1)} KB`
           }
         },
-        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 }, vulnerabilities: [] },
-        outdated: { packages: [], summary: { total: 0 } },
-        emissions: { monthly: { kgCO2: 0 } },
+        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 }, vulnerabilities: [], critical: [], high: [], medium: [], low: [] },
+        outdated: { packages: [], summary: { total: 0 }, totalOutdated: 0 },
+        emissions: { monthly: { kgCO2: 0 }, current: { monthlyCO2Kg: 0 } },
         entryPoints: swynxResult.entryPoints || [],
         raw: swynxResult // Keep original for debugging
       };
 
-      await saveScan(scanResult);
+      console.log('[scan-stream] Saving scan result to database...');
+      try {
+        await saveScan(scanResult);
+      } catch (saveErr) {
+        console.error('[scan-stream] Failed to save scan:', saveErr?.message || saveErr);
+        throw new Error(`Database save error: ${saveErr?.message || saveErr}`);
+      }
+      console.log('[scan-stream] Scan saved successfully');
 
       // Pre-warm AI model in background after scan (so it's ready for qualification)
       import('../../ai/ollama.mjs')
@@ -748,11 +773,16 @@ export async function createRoutes() {
       })}\n\n`);
 
     } catch (error) {
-      console.error('Scan error:', error);
+      // Extract error message from various error types
+      const errorMessage = error?.message || error?.toString?.() || String(error) || 'Unknown scan error';
+      const errorStack = error?.stack || '';
+      console.error('Scan error:', errorMessage);
+      if (errorStack) console.error('Stack:', errorStack);
       // Send error event
       res.write(`data: ${JSON.stringify({
         type: 'error',
-        error: error.message || 'Unknown scan error',
+        error: errorMessage,
+        stack: errorStack,
         timestamp: Date.now()
       })}\n\n`);
     } finally {
