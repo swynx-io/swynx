@@ -22,6 +22,8 @@ import {
   applyFix
 } from '../../fixer/index.mjs';
 import {
+  createSession,
+  quarantineFile,
   listSessions,
   restoreSession,
   purgeSession
@@ -970,6 +972,84 @@ export async function createRoutes() {
 
       const result = purgeSession(projectPath, sessionId);
       res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Quarantine dead code files from a scan
+  router.post('/quarantine/dead-code', async (req, res) => {
+    try {
+      const { projectPath, scanId } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      // Get scan data (specific scanId or latest)
+      let scan;
+      if (scanId) {
+        scan = await getScanById(scanId);
+      } else {
+        const scans = await getRecentScans(projectPath, 1, { includeRaw: true });
+        scan = scans.length > 0 ? scans[0] : null;
+      }
+
+      if (!scan) {
+        return res.status(404).json({
+          success: false,
+          error: 'No scan found for this project'
+        });
+      }
+
+      // Extract dead files from scan data
+      const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
+      const deadCode = scanData.details?.deadCode || scanData.deadCode || {};
+      const deadFiles = deadCode.fullyDeadFiles || deadCode.orphanFiles || deadCode.files || [];
+
+      if (deadFiles.length === 0) {
+        return res.json({
+          success: true,
+          sessionId: null,
+          filesQuarantined: 0,
+          totalSize: 0,
+          message: 'No dead files to quarantine'
+        });
+      }
+
+      // Create quarantine session
+      const { sessionId } = createSession(projectPath, 'dead-code-quarantine');
+
+      // Quarantine each dead file
+      let filesQuarantined = 0;
+      let totalSize = 0;
+      const errors = [];
+
+      for (const file of deadFiles) {
+        try {
+          const filePath = join(projectPath, file.relativePath || file.file);
+          if (existsSync(filePath)) {
+            const stat = statSync(filePath);
+            quarantineFile(projectPath, sessionId, filePath);
+            filesQuarantined++;
+            totalSize += stat.size;
+          }
+        } catch (err) {
+          errors.push({ file: file.relativePath || file.file, error: err.message });
+        }
+      }
+
+      res.json({
+        success: true,
+        sessionId,
+        filesQuarantined,
+        totalSize,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `Quarantined ${filesQuarantined} file(s)`
+      });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
     }
