@@ -90,6 +90,9 @@ EOF
 }
 
 print_success() {
+  # Get local IP
+  LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+
   echo ""
   echo -e "${GREEN}════════════════════════════════════════════${NC}"
   echo -e "${GREEN}  Swynx installed successfully!${NC}"
@@ -102,7 +105,7 @@ print_success() {
   echo ""
   echo "  The AI engine installs automatically on first use."
   echo ""
-  echo -e "  Dashboard: ${BLUE}https://swynx.io/dashboard${NC}"
+  echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:9000${NC}"
   echo -e "  Docs:      ${BLUE}https://github.com/swynx-io/swynx${NC}"
   echo ""
 }
