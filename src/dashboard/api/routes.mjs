@@ -27,6 +27,11 @@ import {
   purgeSession
 } from '../../fixer/quarantine.mjs';
 import {
+  applyFix as applyDeadCodeFix,
+  rollback as rollbackFix,
+  listRollbackSnapshots
+} from '../../fixer/apply-fix.mjs';
+import {
   checkProjectLicense,
   getLicenseStatus
 } from '../../license/index.mjs';
@@ -898,6 +903,139 @@ export async function createRoutes() {
       }
 
       const result = purgeSession(projectPath, sessionId);
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // === Dead Code Fix (--fix functionality) ===
+
+  // Preview dead code fix (dry run)
+  router.post('/fix/dead-code/preview', async (req, res) => {
+    try {
+      const { projectPath, minConfidence } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      // Get latest scan
+      const scans = await getRecentScans(projectPath, 1);
+      if (scans.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No scan data available. Run a scan first.'
+        });
+      }
+
+      let scanResult;
+      if (typeof scans[0].raw_data === 'string') {
+        scanResult = JSON.parse(scans[0].raw_data);
+      } else {
+        scanResult = scans[0].raw_data || scans[0];
+      }
+
+      // Convert to reporter shape if needed
+      const deadFiles = scanResult.deadFiles || scanResult.details?.deadCode?.orphanFiles || [];
+      const reporterShape = {
+        deadFiles: deadFiles.map(f => ({
+          path: f.path || f.file,
+          size: f.size || f.sizeBytes || 0,
+          aiConfidence: f.aiConfidence || f.confidence || 1
+        }))
+      };
+
+      const result = await applyDeadCodeFix(projectPath, reporterShape, {
+        dryRun: true,
+        minConfidence: minConfidence || 0
+      });
+
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Apply dead code fix (actually delete files)
+  router.post('/fix/dead-code/apply', async (req, res) => {
+    try {
+      const { projectPath, minConfidence, noImportClean, noBarrelClean, noGitCommit } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      // Get latest scan
+      const scans = await getRecentScans(projectPath, 1);
+      if (scans.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No scan data available. Run a scan first.'
+        });
+      }
+
+      let scanResult;
+      if (typeof scans[0].raw_data === 'string') {
+        scanResult = JSON.parse(scans[0].raw_data);
+      } else {
+        scanResult = scans[0].raw_data || scans[0];
+      }
+
+      // Convert to reporter shape if needed
+      const deadFiles = scanResult.deadFiles || scanResult.details?.deadCode?.orphanFiles || [];
+      const reporterShape = {
+        deadFiles: deadFiles.map(f => ({
+          path: f.path || f.file,
+          size: f.size || f.sizeBytes || 0,
+          aiConfidence: f.aiConfidence || f.confidence || 1
+        }))
+      };
+
+      const result = await applyDeadCodeFix(projectPath, reporterShape, {
+        dryRun: false,
+        minConfidence: minConfidence || 0,
+        noImportClean: noImportClean || false,
+        noBarrelClean: noBarrelClean || false,
+        noGitCommit: noGitCommit || false
+      });
+
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // List available snapshots for rollback
+  router.get('/fix/snapshots/:projectPath(*)', async (req, res) => {
+    try {
+      const projectPath = decodeURIComponent(req.params.projectPath);
+      const snapshots = await listRollbackSnapshots(projectPath);
+      res.json({ success: true, snapshots });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Rollback a fix
+  router.post('/fix/rollback', async (req, res) => {
+    try {
+      const { projectPath, snapshotId } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      const result = await rollbackFix(projectPath, snapshotId || null);
       res.json({ success: true, result });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });

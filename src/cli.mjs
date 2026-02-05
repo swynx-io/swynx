@@ -50,7 +50,13 @@ program
   .option('--ollama-url <url>', 'Ollama API endpoint', 'http://localhost:11434')
   .option('--qualify-limit <n>', 'max dead files to qualify', (v) => parseInt(v, 10), 50)
   .option('--auto-learn', 'auto-feed AI false positives into knowledge base')
-  .option('--dry-run', 'preview what would be learned without writing')
+  .option('--dry-run', 'preview what would be learned/fixed without writing')
+  .option('--fix', 'automatically remove dead files after scan')
+  .option('--min-confidence <n>', 'minimum AI confidence for --fix (0.0-1.0)', (v) => parseFloat(v), 0)
+  .option('--no-import-clean', 'skip cleaning imports from live files')
+  .option('--no-barrel-clean', 'skip cleaning barrel file re-exports')
+  .option('--no-git-commit', 'skip creating a git commit after fix')
+  .option('--confirm', 'require confirmation before fixing (default with --fix)')
   .action(async (path, opts) => {
     const root = resolve(path);
 
@@ -113,6 +119,52 @@ program
 
     if (opts.ci && results.deadFiles.length > 0) {
       process.exit(1);
+    }
+
+    // Apply fix if requested
+    if (opts.fix) {
+      const { applyFix, generateReport } = await import('./fixer/apply-fix.mjs');
+
+      // Confirm before fixing (unless dry-run)
+      if (!opts.dryRun && opts.confirm !== false) {
+        const deadCount = results.deadFiles.length;
+        if (deadCount === 0) {
+          console.log('\nNo dead files to remove.');
+          return;
+        }
+
+        console.log(`\n${deadCount} dead file${deadCount > 1 ? 's' : ''} will be removed.`);
+
+        const answer = await new Promise((res) => {
+          const rl = createInterface({ input: process.stdin, output: process.stdout });
+          rl.question('Proceed with fix? [y/N] ', (ans) => {
+            rl.close();
+            res(ans.trim().toLowerCase());
+          });
+        });
+
+        if (answer !== 'y' && answer !== 'yes') {
+          console.log('Fix cancelled.');
+          return;
+        }
+      }
+
+      const fixResult = await applyFix(root, results, {
+        dryRun: opts.dryRun,
+        minConfidence: opts.minConfidence,
+        noImportClean: opts.importClean === false,
+        noBarrelClean: opts.barrelClean === false,
+        noGitCommit: opts.gitCommit === false,
+        verbose: opts.verbose
+      });
+
+      const fixReport = generateReport(fixResult, {
+        format: opts.format === 'json' ? 'json' : 'console',
+        dryRun: opts.dryRun,
+        verbose: opts.verbose
+      });
+
+      console.log(fixReport);
     }
   });
 
@@ -299,6 +351,53 @@ learn
 
     rl.close();
     console.log('Review complete.');
+  });
+
+// ── rollback ───────────────────────────────────────────────────────────────
+
+program
+  .command('rollback')
+  .argument('[path]', 'project root', '.')
+  .description('Rollback the most recent --fix operation')
+  .option('--list', 'list available snapshots')
+  .option('--snapshot <id>', 'restore a specific snapshot by ID')
+  .action(async (path, opts) => {
+    const root = resolve(path);
+    const { rollback, listRollbackSnapshots } = await import('./fixer/apply-fix.mjs');
+
+    if (opts.list) {
+      const snapshots = await listRollbackSnapshots(root);
+      if (snapshots.length === 0) {
+        console.log('No snapshots available.');
+        return;
+      }
+
+      console.log('\nAvailable snapshots:\n');
+      for (const snap of snapshots) {
+        const date = new Date(snap.createdAt).toLocaleString();
+        const status = snap.status === 'restored' ? ' (restored)' : '';
+        console.log(`  ${snap.snapshotId}${status}`);
+        console.log(`    Created: ${date}`);
+        console.log(`    Files: ${snap.fileCount}`);
+        console.log('');
+      }
+      return;
+    }
+
+    const result = await rollback(root, opts.snapshot);
+
+    if (result.success) {
+      console.log(`\n✓ Rolled back ${result.restored.length} file(s)`);
+      if (result.restored.length > 0 && result.restored.length <= 10) {
+        for (const file of result.restored) {
+          console.log(`  + ${file}`);
+        }
+      }
+      console.log('\nNote: You may need to run "git checkout ." to undo the commit.');
+    } else {
+      console.error(`\n✗ Rollback failed: ${result.error}`);
+      process.exit(1);
+    }
   });
 
 // ── train ──────────────────────────────────────────────────────────────────
