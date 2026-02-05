@@ -698,19 +698,25 @@ export async function createRoutes() {
 
     try {
       // Run the scan with progress callback
+      const startTime = Date.now();
       const workers = getSetting('performance.workers', 0) || undefined;
       const swynxResult = await scanProject(projectPath, { onProgress, workers });
+      const duration = Date.now() - startTime;
 
       // Adapt Swynx output to dashboard-compatible format
       const deadRate = parseFloat(swynxResult.summary?.deadRate) || 0;
+      const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const scanResult = {
+        id: scanId,
         projectPath,
-        timestamp: new Date().toISOString(),
+        scannedAt: new Date().toISOString(),
+        duration,
+        healthScore: { score: Math.max(0, 100 - deadRate * 10) }, // Simple health score based on dead code %
         summary: {
           totalFiles: swynxResult.summary?.totalFiles || 0,
           wastePercent: deadRate,
           wasteSizeBytes: swynxResult.summary?.totalDeadBytes || 0,
-          totalBytes: swynxResult.summary?.totalDeadBytes || 0, // approximate
+          totalSizeBytes: swynxResult.summary?.totalDeadBytes || 0, // approximate
         },
         deadCode: {
           files: swynxResult.deadFiles || [],
