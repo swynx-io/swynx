@@ -923,8 +923,8 @@ export async function createRoutes() {
         });
       }
 
-      // Get latest scan
-      const scans = await getRecentScans(projectPath, 1);
+      // Get latest scan (includeRaw: true to get the dead code data)
+      const scans = await getRecentScans(projectPath, 1, { includeRaw: true });
       if (scans.length === 0) {
         return res.status(400).json({
           success: false,
@@ -940,10 +940,14 @@ export async function createRoutes() {
       }
 
       // Convert to reporter shape if needed
-      const deadFiles = scanResult.deadFiles || scanResult.details?.deadCode?.orphanFiles || [];
+      // PEER Audit stores dead code in details.deadCode.fullyDeadFiles
+      const deadFiles = scanResult.deadFiles ||
+                        scanResult.details?.deadCode?.fullyDeadFiles ||
+                        scanResult.details?.deadCode?.orphanFiles ||
+                        [];
       const reporterShape = {
         deadFiles: deadFiles.map(f => ({
-          path: f.path || f.file,
+          path: f.path || f.file || f.relativePath,
           size: f.size || f.sizeBytes || 0,
           aiConfidence: f.aiConfidence || f.confidence || 1
         }))
@@ -972,8 +976,8 @@ export async function createRoutes() {
         });
       }
 
-      // Get latest scan
-      const scans = await getRecentScans(projectPath, 1);
+      // Get latest scan (includeRaw: true to get the dead code data)
+      const scans = await getRecentScans(projectPath, 1, { includeRaw: true });
       if (scans.length === 0) {
         return res.status(400).json({
           success: false,
@@ -989,10 +993,14 @@ export async function createRoutes() {
       }
 
       // Convert to reporter shape if needed
-      const deadFiles = scanResult.deadFiles || scanResult.details?.deadCode?.orphanFiles || [];
+      // PEER Audit stores dead code in details.deadCode.fullyDeadFiles
+      const deadFiles = scanResult.deadFiles ||
+                        scanResult.details?.deadCode?.fullyDeadFiles ||
+                        scanResult.details?.deadCode?.orphanFiles ||
+                        [];
       const reporterShape = {
         deadFiles: deadFiles.map(f => ({
-          path: f.path || f.file,
+          path: f.path || f.file || f.relativePath,
           size: f.size || f.sizeBytes || 0,
           aiConfidence: f.aiConfidence || f.confidence || 1
         }))
