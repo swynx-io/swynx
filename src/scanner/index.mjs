@@ -62,11 +62,26 @@ const ENTRY_POINT_PATTERNS = [
   // Tests (multi-language)
   /\/tests?\//, /^tests?\//,
   /\/specs?\//, /^specs?\//,   // Test directories (spec, specs)
-  /\/e2e\//, /__checks__\//, /\/intTest\//, /^intTest\//,
-  // Benchmarks
+  /\/e2e\//, /e2e-tests?\//, /__checks__\//, /\/intTest\//, /^intTest\//,
+  // Deprecated packages (kept for backwards compatibility)
+  /deprecated-packages?\//, /\/deprecated\//,
+  // Benchmarks and performance testing
   /\/benchmarks?\//, /^benchmarks?\//,
+  /smoke-test/, /performance-test/,
   // Docker/CI scripts
   /docker.*\.sh$/, /\.dockerfile$/i,
+  // Kubernetes/deployment patterns
+  /\/hack\//, /^hack\//, /\/cluster\//, /^cluster\//,
+  /\/staging\//, /^staging\//,
+  // Serverless functions
+  /\/netlify\//, /^netlify\//, /\/vercel\//, /^vercel\//,
+  /\/lambda\//, /^lambda\//, /\/functions\//, /^functions\//,
+  // Codemods (standalone transformation scripts)
+  /\/codemods?\//, /^codemods?\//, /-codemod\//,
+  // Frontend static/app directories (webpack/vite entry points)
+  /\/static\/app\//, /\/static\/gs/,
+  // Generated/vendored code patterns
+  /\/@generated\//, /\/_generated\//, /\/generated\//,
   // Examples, samples, debug, and documentation
   /\/examples?\//, /^examples?\//,
   /\/samples(-dev)?\//, /^samples(-dev)?\//,
@@ -114,6 +129,8 @@ const ENTRY_POINT_PATTERNS = [
   /\/languages?\/[^/]+\.(js|ts)$/, /\/lang\//, /^lang\//,
   /\/themes?\//, /^themes?\//,
   /\/grammars?\//, /^grammars?\//,
+  // Icon libraries (dynamically loaded by name)
+  /\/icons?\//, /-icons-/, /icons-material/,
   // PHP entry points
   /index\.php$/, /artisan$/, /composer\.json$/,
   /app\/Http\/Controllers\//, /app\/Models\//, /app\/Providers\//,

@@ -182,9 +182,21 @@ start_dashboard() {
   # Start dashboard in background
   cd "$INSTALL_DIR"
   nohup node bin/swynx dashboard --port $DASHBOARD_PORT > /tmp/swynx-dashboard.log 2>&1 &
+  local dash_pid=$!
 
-  # Wait for dashboard to be ready
-  for i in {1..10}; do
+  # Wait for dashboard to be ready (up to 15 seconds)
+  for i in {1..15}; do
+    # Check if process died
+    if ! kill -0 $dash_pid 2>/dev/null; then
+      echo -e "${RED}✗ Dashboard failed to start${NC}"
+      if [ -f /tmp/swynx-dashboard.log ]; then
+        echo ""
+        echo "Error log:"
+        tail -20 /tmp/swynx-dashboard.log
+      fi
+      return 1
+    fi
+    # Check if responding
     if curl -s "http://127.0.0.1:$DASHBOARD_PORT/api/health" > /dev/null 2>&1; then
       echo -e "${GREEN}✓ Dashboard running${NC}"
       return 0
@@ -192,7 +204,12 @@ start_dashboard() {
     sleep 1
   done
 
-  echo -e "${YELLOW}⚠ Dashboard may still be starting...${NC}"
+  # Still running but not responding - something's wrong
+  echo -e "${RED}✗ Dashboard not responding${NC}"
+  echo ""
+  echo "Log output:"
+  tail -20 /tmp/swynx-dashboard.log
+  return 1
 }
 
 print_success() {

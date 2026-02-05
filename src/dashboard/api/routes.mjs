@@ -3,7 +3,7 @@
 
 import { Router } from 'express';
 // Use PEER Audit's full scanner for complete analysis
-import scanProject from '/var/www/peer-audit/src/scanner/index.mjs';
+import scanProject from '../../scanner/index.mjs';
 import {
   initDatabase,
   saveScan,
