@@ -278,6 +278,68 @@ export async function createRoutes() {
     res.json({ success: true, message: 'Scan started' });
   });
 
+  // Streaming scan endpoint (SSE)
+  router.get('/scan-stream/:projectPath(*)', async (req, res) => {
+    const projectPath = decodeURIComponent(req.params.projectPath);
+
+    if (!projectPath || !existsSync(projectPath)) {
+      return res.status(400).json({ success: false, error: 'Valid projectPath is required' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const send = (event, data) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    send('start', { projectPath, message: 'Starting scan...' });
+
+    try {
+      const { scan } = await import('../../scanner/index.mjs');
+
+      const result = await scan(projectPath, {
+        onProgress: (progress) => {
+          send('progress', progress);
+        }
+      });
+
+      // Transform to reporter shape
+      const scanData = {
+        id: Date.now().toString(),
+        projectPath,
+        projectName: basename(projectPath),
+        scannedAt: new Date().toISOString(),
+        totalFiles: result.summary.totalFiles,
+        entryPoints: result.summary.entryPoints,
+        reachableFiles: result.summary.reachableFiles,
+        deadRate: result.summary.deadRate,
+        totalDeadBytes: result.summary.totalDeadBytes,
+        languages: result.summary.languages,
+        deadFiles: result.deadFiles.map(f => ({
+          path: f.file,
+          size: f.size,
+          lines: f.lines,
+          language: f.language,
+          exports: (f.exports || []).map(e => e.name)
+        }))
+      };
+
+      // Save scan
+      const scans = loadScans();
+      scans.push(scanData);
+      scansCache = scans;
+      saveScans();
+
+      send('complete', { scan: scanData });
+    } catch (error) {
+      send('error', { error: error.message });
+    }
+
+    res.end();
+  });
+
   // === AI Qualification ===
 
   router.get('/ai/status', async (req, res) => {
