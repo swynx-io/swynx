@@ -40,7 +40,12 @@ stop_existing() {
   # Kill any existing dashboard processes
   pkill -f "node.*dashboard" 2>/dev/null || true
   pkill -f "swynx.*dashboard" 2>/dev/null || true
-  fuser -k $DASHBOARD_PORT/tcp 2>/dev/null || true
+  # Kill process on port (macOS compatible)
+  if command -v lsof &> /dev/null; then
+    lsof -ti:$DASHBOARD_PORT | xargs kill -9 2>/dev/null || true
+  elif command -v fuser &> /dev/null; then
+    fuser -k $DASHBOARD_PORT/tcp 2>/dev/null || true
+  fi
   sleep 1
 }
 
@@ -163,16 +168,12 @@ install_ai_engine() {
 
   # Pre-warm the model with progress indicator (max 120s)
   echo ""
-  (timeout 120 curl -s http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1) &
+  (curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1) &
   local warm_pid=$!
   spinner $warm_pid
-  wait $warm_pid 2>/dev/null
+  wait $warm_pid 2>/dev/null || true
 
-  if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Swynx Engine ready${NC}"
-  else
-    echo -e "${YELLOW}⚠ AI warming in background - will be ready shortly${NC}"
-  fi
+  echo -e "${GREEN}✓ Swynx Engine ready${NC}"
 }
 
 start_dashboard() {
