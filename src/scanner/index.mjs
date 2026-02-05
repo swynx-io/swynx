@@ -182,8 +182,8 @@ export async function scan(projectPath, options = {}) {
   // Workspace package entry points - mark each workspace package's entry file
   const { workspacePackages: wsPkgs } = extractPathAliases(projectPath);
 
-  // HTML entry points and vite replacement entry points in workspace packages
-  for (const [, pkg] of wsPkgs) {
+  // HTML entry points, vite replacement entry points, and script entry points in workspace packages
+  for (const [pkgName, pkg] of wsPkgs) {
     const wsHtmlEntries = extractHtmlEntryPoints(join(projectPath, pkg.dir), pkg.dir);
     for (const ep of wsHtmlEntries) {
       entryPointFiles.add(ep);
@@ -193,6 +193,19 @@ export async function scan(projectPath, options = {}) {
     for (const ep of wsViteEntries) {
       entryPointFiles.add(ep);
       entryPointReasons.push({ file: ep, reason: 'Vite resolve.alias replacement' });
+    }
+    // Script entry points from workspace package.json
+    const wsPkgJsonPath = join(projectPath, pkg.dir, 'package.json');
+    if (existsSync(wsPkgJsonPath)) {
+      try {
+        const wsPkgJson = JSON.parse(readFileSync(wsPkgJsonPath, 'utf-8'));
+        const wsScriptEntries = extractScriptEntryPoints(wsPkgJson, join(projectPath, pkg.dir));
+        for (const ep of wsScriptEntries) {
+          const fullPath = `${pkg.dir}/${ep}`;
+          entryPointFiles.add(fullPath);
+          entryPointReasons.push({ file: fullPath, reason: `Workspace script entry: ${pkgName}` });
+        }
+      } catch {}
     }
   }
   for (const [pkgName, pkg] of wsPkgs) {

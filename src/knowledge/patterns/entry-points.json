@@ -172,11 +172,19 @@
     },
     {
       "id": "generated-files",
-      "name": "Generated code files",
-      "pattern": "\\.gen\\.[mc]?[jt]sx?$",
+      "name": "Generated code files (.gen.*)",
+      "pattern": "\\.gen\\.([mc]?[jt]sx?|go|py|java)$",
       "type": "entry-point",
-      "languages": ["javascript", "typescript"],
-      "reason": "Generated files (*.gen.ts) are created by code generators and loaded at runtime"
+      "languages": ["javascript", "typescript", "go", "python", "java"],
+      "reason": "Generated files (*.gen.ts, *.gen.go) are created by code generators and loaded at runtime"
+    },
+    {
+      "id": "generated-files-dotgenerated",
+      "name": "Generated code files (.generated.*)",
+      "pattern": "\\.generated\\.([mc]?[jt]sx?|go|py|java)$",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript", "go", "python", "java"],
+      "reason": "Generated files (*.generated.ts) are created by code generators and loaded at runtime"
     },
     {
       "id": "generated-directories",
@@ -185,6 +193,14 @@
       "type": "entry-point",
       "languages": ["javascript", "typescript", "python", "go", "java"],
       "reason": "Generated directories contain auto-generated code loaded at runtime"
+    },
+    {
+      "id": "gen-directories",
+      "name": "Protobuf gen directories",
+      "pattern": "(^|/)gen/",
+      "type": "entry-point",
+      "languages": ["go", "python", "java"],
+      "reason": "gen/ directories contain protobuf/gRPC generated code"
     },
     {
       "id": "sandbox-directories",
