@@ -3160,12 +3160,31 @@ export async function createRoutes() {
       const startTime = Date.now();
       const counts = { 'confirmed-dead': 0, 'likely-dead': 0, uncertain: 0, 'likely-alive': 0, 'false-positive': 0 };
 
-      // Qualify files in batches for speed
+      // Qualify files in batches with thermal management
+      const COOLDOWN_MS = 2000;
+      const THERMAL_BREAK_MS = 15000;
+      const THERMAL_BREAK_EVERY = 20;
       let processed = 0;
+
       for (let i = 0; i < total; i += BATCH_SIZE) {
         const batch = filesToQualify.slice(i, i + BATCH_SIZE);
         const batchNum = Math.floor(i / BATCH_SIZE) + 1;
         const totalBatches = Math.ceil(total / BATCH_SIZE);
+
+        // Thermal break every 20 files — longer pause with visual feedback
+        if (processed > 0 && processed % THERMAL_BREAK_EVERY < BATCH_SIZE) {
+          res.write(`data: ${JSON.stringify({
+            type: 'progress',
+            current: processed,
+            total,
+            progress: Math.round((processed / total) * 100),
+            message: `Optimising analysis — ${processed} files classified, preparing next batch...`
+          })}\n\n`);
+          await new Promise(r => setTimeout(r, THERMAL_BREAK_MS));
+        } else if (i > 0) {
+          // Short cooldown between normal batches
+          await new Promise(r => setTimeout(r, COOLDOWN_MS));
+        }
 
         res.write(`data: ${JSON.stringify({
           type: 'progress',
