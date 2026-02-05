@@ -315,4 +315,20 @@ program
     child.on('exit', (code) => process.exit(code || 0));
   });
 
+// ── dashboard ──────────────────────────────────────────────────────────────
+
+program
+  .command('dashboard')
+  .description('Start the Swynx web dashboard')
+  .option('--port <port>', 'port to listen on', '8999')
+  .option('--no-browser', 'do not open browser automatically')
+  .action(async (opts) => {
+    const port = parseInt(opts.port, 10);
+    const { startDashboard } = await import('./dashboard/server.mjs');
+    await startDashboard({
+      port,
+      openBrowser: opts.browser !== false
+    });
+  });
+
 program.parse();
