@@ -86,9 +86,19 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
   const filePathsNoExt = new Map();
   for (const file of parsedFiles) {
     const filePath = file.relativePath;
-    const noExt = filePath.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go)$/, '');
+    const noExt = filePath.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go|rs|rb|php)$/, '');
     if (!filePathsNoExt.has(noExt)) filePathsNoExt.set(noExt, []);
     filePathsNoExt.get(noExt).push(filePath);
+  }
+
+  // Rust module lookup: maps directory paths to their files
+  const rustModulePaths = new Map();
+  for (const file of parsedFiles) {
+    const filePath = file.relativePath;
+    if (!filePath.endsWith('.rs')) continue;
+    const dir = dirname(filePath);
+    if (!rustModulePaths.has(dir)) rustModulePaths.set(dir, []);
+    rustModulePaths.get(dir).push(filePath);
   }
 
   // All file paths
@@ -273,6 +283,41 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
       return matches;
     }
 
+    // Rust mod declarations
+    const isRust = fromFile.endsWith('.rs');
+    if (isRust) {
+      // Rust module resolution supports two styles:
+      // 1. Classic (pre-2018): mod foo; -> foo/mod.rs
+      // 2. Rust 2018: mod foo; -> foo.rs (at same level) OR parent_name/foo.rs (if in parent_name.rs)
+      const dir = dirname(fromFile);
+      const fileName = basename(fromFile);
+      const fileNameNoExt = fileName.replace('.rs', '');
+      const isModFile = fileName === 'mod.rs' || fileName === 'lib.rs' || fileName === 'main.rs';
+
+      // For mod.rs/lib.rs/main.rs: look for sibling foo.rs or foo/mod.rs
+      if (isModFile) {
+        // Direct sibling: foo.rs
+        const siblingPath = dir + '/' + importPath + '.rs';
+        if (fileImports.has(siblingPath)) return [siblingPath];
+
+        // Directory module: foo/mod.rs
+        const dirModPath = dir + '/' + importPath + '/mod.rs';
+        if (fileImports.has(dirModPath)) return [dirModPath];
+      } else {
+        // Rust 2018 edition: if we're in src/nameres.rs and it says mod collector;
+        // look for src/nameres/collector.rs (directory named after the file)
+        const rust2018Path = dir + '/' + fileNameNoExt + '/' + importPath + '.rs';
+        if (fileImports.has(rust2018Path)) return [rust2018Path];
+
+        // Also check for nested mod.rs style in case of mixed usage
+        const nestedModPath = dir + '/' + fileNameNoExt + '/' + importPath + '/mod.rs';
+        if (fileImports.has(nestedModPath)) return [nestedModPath];
+      }
+
+      // External crate imports won't have local files
+      return [];
+    }
+
     // Go imports
     if (isGo && !importPath.startsWith('.') && !importPath.startsWith('/')) {
       const deadGoPattern = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)[^/]*\.go$/i;
@@ -451,6 +496,44 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
         for (const fp of fileImports.keys()) {
           if (fp.endsWith('.go') && !visited.has(fp) && !deadGoPattern.test(fp) && dirname(fp) === currentDir) {
             queue.push(fp);
+          }
+        }
+      }
+
+      // Rust module tree linking - walk to all files declared via `mod foo;`
+      if (current.endsWith('.rs')) {
+        const currentDir = dirname(current);
+        const fileName = basename(current);
+        const fileNameNoExt = fileName.replace('.rs', '');
+        const isModFile = fileName === 'mod.rs' || fileName === 'lib.rs' || fileName === 'main.rs';
+
+        // For Rust, we need to follow mod declarations in the parsed imports
+        for (const imp of fileImports.get(current) || []) {
+          const modName = imp.module || imp;
+          if (typeof modName !== 'string') continue;
+
+          if (isModFile) {
+            // For mod.rs/lib.rs/main.rs: look for sibling foo.rs or foo/mod.rs
+            const siblingPath = currentDir + '/' + modName + '.rs';
+            const dirModPath = currentDir + '/' + modName + '/mod.rs';
+
+            if (fileImports.has(siblingPath) && !visited.has(siblingPath)) {
+              queue.push(siblingPath);
+            }
+            if (fileImports.has(dirModPath) && !visited.has(dirModPath)) {
+              queue.push(dirModPath);
+            }
+          } else {
+            // Rust 2018: if in src/nameres.rs, mod collector; -> src/nameres/collector.rs
+            const rust2018Path = currentDir + '/' + fileNameNoExt + '/' + modName + '.rs';
+            const nestedModPath = currentDir + '/' + fileNameNoExt + '/' + modName + '/mod.rs';
+
+            if (fileImports.has(rust2018Path) && !visited.has(rust2018Path)) {
+              queue.push(rust2018Path);
+            }
+            if (fileImports.has(nestedModPath) && !visited.has(nestedModPath)) {
+              queue.push(nestedModPath);
+            }
           }
         }
       }

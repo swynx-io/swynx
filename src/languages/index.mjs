@@ -15,7 +15,13 @@ const EXTENSION_MAP = {
   // Go
   '.go': 'go',
   // Java/Kotlin
-  '.java': 'java', '.kt': 'java', '.kts': 'java'
+  '.java': 'java', '.kt': 'java', '.kts': 'java',
+  // PHP
+  '.php': 'php', '.phtml': 'php', '.php3': 'php', '.php4': 'php', '.php5': 'php', '.phps': 'php',
+  // Ruby
+  '.rb': 'ruby', '.rake': 'ruby', '.gemspec': 'ruby', '.ru': 'ruby',
+  // Rust
+  '.rs': 'rust'
 };
 
 const CODE_EXTENSIONS = new Set(Object.keys(EXTENSION_MAP));
@@ -36,12 +42,15 @@ export function groupFilesByLanguage(files) {
     python: [],
     go: [],
     java: [],
+    php: [],
+    ruby: [],
+    rust: [],
     unknown: []
   };
 
   for (const file of files) {
     const lang = detectLanguage(file);
-    if (lang) {
+    if (lang && groups[lang]) {
       groups[lang].push(file);
     } else {
       groups.unknown.push(file);
@@ -68,6 +77,15 @@ export async function getLanguageHandler(language) {
         break;
       case 'java':
         handlers[language] = await import('./java.mjs');
+        break;
+      case 'php':
+        handlers[language] = await import('./php.mjs');
+        break;
+      case 'ruby':
+        handlers[language] = await import('./ruby.mjs');
+        break;
+      case 'rust':
+        handlers[language] = await import('./rust.mjs');
         break;
       default:
         return null;

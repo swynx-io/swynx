@@ -1,7 +1,7 @@
 // src/scanner/index.mjs
 // Main scan orchestrator - thin layer that delegates to modules
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import { loadKnowledge, getAllEntryPointAnnotations, getEntryPointFilePatterns } from '../knowledge/loader.mjs';
 import { discoverFiles } from './discovery.mjs';
@@ -14,6 +14,8 @@ import { detectFrameworks, checkFrameworkEntry } from '../frameworks/index.mjs';
 const ENTRY_POINT_PATTERNS = [
   // Config files
   /\.(config|rc)(\.\w+)*\.([mc]?[jt]s|json)$/,
+  // CI config files
+  /dangerfile\.[jt]s$/,
   // Type declarations
   /\.d\.ts$/,
   // Test files
@@ -59,10 +61,12 @@ const ENTRY_POINT_PATTERNS = [
   /\/migrations\//, /\/seeds?\//,
   // Tests (multi-language)
   /\/tests?\//, /^tests?\//,
+  /\/specs?\//, /^specs?\//,   // Test directories (spec, specs)
   /\/e2e\//, /__checks__\//,
-  // Examples and samples
+  // Examples, samples, and debug
   /\/examples?\//, /^examples?\//,
   /\/samples(-dev)?\//, /^samples(-dev)?\//,
+  /\/debug\//, /^debug\//,
   // Dynamic loading directories
   /\/composables?\//, /\/stores\//, /\/routers?\//,
   // Enterprise modules & backend modules
@@ -94,7 +98,40 @@ const ENTRY_POINT_PATTERNS = [
   // Monorepo patterns
   /^packages\/[^/]+\/src\/(index|main)\.([mc]?[jt]s|[jt]sx)$/,
   /^packages\/@[^/]+\/[^/]+\/src\/(index|main)\.([mc]?[jt]s|[jt]sx)$/,
-  /^libs\/[^/]+\/src\/(index|main)\.([mc]?[jt]s|[jt]sx)$/
+  /^libs\/[^/]+\/src\/(index|main)\.([mc]?[jt]s|[jt]sx)$/,
+  // Dynamic loading: code editors, syntax highlighters
+  /\/mode\/[^/]+\.js$/, /\/modes?\//, /^modes?\//,
+  /\/languages?\/[^/]+\.(js|ts)$/, /\/lang\//, /^lang\//,
+  /\/themes?\//, /^themes?\//,
+  /\/grammars?\//, /^grammars?\//,
+  // PHP entry points
+  /index\.php$/, /artisan$/, /composer\.json$/,
+  /app\/Http\/Controllers\//, /app\/Models\//, /app\/Providers\//,
+  /routes\/web\.php$/, /routes\/api\.php$/,
+  /database\/migrations\//, /database\/seeders\//,
+  /config\/.*\.php$/, /resources\/views\//,
+  // Ruby entry points
+  /config\.ru$/, /Rakefile$/, /Gemfile$/,
+  /app\/controllers\//, /app\/models\//, /app\/helpers\//,
+  /app\/jobs\//, /app\/mailers\//, /app\/views\//,
+  /config\/routes\.rb$/, /config\/application\.rb$/,
+  /db\/migrate\//, /db\/seeds\.rb$/,
+  /lib\/tasks\/.*\.rake$/,
+  /spec\/.*_spec\.rb$/, /test\/.*_test\.rb$/,
+  // Rust entry points
+  /^src\/main\.rs$/, /^src\/lib\.rs$/, /^src\/bin\/[^/]+\.rs$/,
+  /Cargo\.toml$/, /build\.rs$/,
+  /benches\/.*\.rs$/, /examples\/.*\.rs$/,
+  // Rust test data and inline module submodules
+  /\/test_data\//, /\/test-data\//, /\/testdata\//,
+  /\/fuzz_targets\/[^/]+\.rs$/,  // Fuzz test targets
+  // Common Rust inline module submodule directories
+  /\/handlers\/[^/]+\.rs$/,
+  /\/imports\/[^/]+\.rs$/,
+  /\/syntax_helpers\/[^/]+\.rs$/,
+  /\/completions\/[^/]+\.rs$/,
+  /\/tracing\/[^/]+\.rs$/,
+  /\/toolchain_info\/[^/]+\.rs$/
 ];
 
 /**
@@ -178,6 +215,80 @@ export async function scan(projectPath, options = {}) {
   for (const ep of viteReplacementEntries) {
     entryPointFiles.add(ep);
     entryPointReasons.push({ file: ep, reason: 'Vite resolve.alias replacement' });
+  }
+
+  // Nested package.json entry points (for sub-packages like editors/code/)
+  const nestedPkgEntries = extractNestedPackageEntryPoints(projectPath, parsedFiles);
+  for (const ep of nestedPkgEntries) {
+    entryPointFiles.add(ep.file);
+    entryPointReasons.push({ file: ep.file, reason: ep.reason });
+  }
+
+  // Build config entry points (rollup, webpack, vite, esbuild)
+  const buildConfigEntries = extractBuildConfigEntryPoints(projectPath);
+  for (const ep of buildConfigEntries) {
+    // Try to match with actual files (with extension resolution)
+    const epNoExt = ep.replace(/\.([mc]?[jt]s|[jt]sx)$/, '');
+    for (const file of parsedFiles) {
+      const fp = file.relativePath;
+      const fpNoExt = fp.replace(/\.([mc]?[jt]s|[jt]sx)$/, '');
+      if (fp === ep || fpNoExt === epNoExt || fp === ep + '/index.js' || fp === ep + '/index.ts') {
+        entryPointFiles.add(fp);
+        entryPointReasons.push({ file: fp, reason: 'Build config entry' });
+        break;
+      }
+    }
+  }
+
+  // Cargo.toml entry points (Rust)
+  const cargoEntries = extractCargoEntryPoints(projectPath);
+  for (const ep of cargoEntries) {
+    if (ep.endsWith('/')) {
+      // Directory marker - mark all files in this directory as entry points
+      for (const file of parsedFiles) {
+        if (file.relativePath.startsWith(ep)) {
+          entryPointFiles.add(file.relativePath);
+          entryPointReasons.push({ file: file.relativePath, reason: 'Cargo.toml autoload' });
+        }
+      }
+    } else {
+      entryPointFiles.add(ep);
+      entryPointReasons.push({ file: ep, reason: 'Cargo.toml entry' });
+    }
+  }
+
+  // composer.json entry points (PHP)
+  const composerEntries = extractComposerEntryPoints(projectPath);
+  for (const ep of composerEntries) {
+    if (ep.endsWith('/')) {
+      // Directory marker - mark all files in this directory as entry points
+      for (const file of parsedFiles) {
+        if (file.relativePath.startsWith(ep)) {
+          entryPointFiles.add(file.relativePath);
+          entryPointReasons.push({ file: file.relativePath, reason: 'Composer autoload' });
+        }
+      }
+    } else {
+      entryPointFiles.add(ep);
+      entryPointReasons.push({ file: ep, reason: 'Composer entry' });
+    }
+  }
+
+  // Gemfile/gemspec entry points (Ruby)
+  const gemEntries = extractGemEntryPoints(projectPath);
+  for (const ep of gemEntries) {
+    if (ep.endsWith('/')) {
+      // Directory marker
+      for (const file of parsedFiles) {
+        if (file.relativePath.startsWith(ep)) {
+          entryPointFiles.add(file.relativePath);
+          entryPointReasons.push({ file: file.relativePath, reason: 'Gem autoload' });
+        }
+      }
+    } else {
+      entryPointFiles.add(ep);
+      entryPointReasons.push({ file: ep, reason: 'Gem entry' });
+    }
   }
 
   // Workspace package entry points - mark each workspace package's entry file
@@ -500,7 +611,10 @@ export async function scan(projectPath, options = {}) {
         javascript: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'javascript').length,
         python: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'python').length,
         go: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'go').length,
-        java: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'java').length
+        java: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'java').length,
+        php: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'php').length,
+        ruby: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'ruby').length,
+        rust: parsedFiles.filter(f => detectLanguage(f.relativePath) === 'rust').length
       }
     }
   };
@@ -585,24 +699,66 @@ function extractScriptEntryPoints(packageJson, projectPath) {
 function extractHtmlEntryPoints(projectPath, prefix = '') {
   const entryPoints = new Set();
   if (!projectPath) return entryPoints;
+
+  // Direct HTML files to check
   const htmlFiles = ['index.html', 'public/index.html', 'src/index.html'];
-  for (const htmlFile of htmlFiles) {
-    const htmlPath = join(projectPath, htmlFile);
-    if (!existsSync(htmlPath)) continue;
+
+  // Also scan layout directories (Jekyll, Hugo, etc.)
+  const layoutDirs = ['_layouts', '_includes', 'layouts', 'templates', 'views'];
+
+  function scanHtmlFile(htmlPath) {
     try {
       const content = readFileSync(htmlPath, 'utf-8');
+      // Match script src with JS/TS extensions
       const scriptPattern = /<script[^>]*\ssrc=["']([^"']+\.(?:[mc]?[jt]s|[jt]sx))["'][^>]*>/gi;
       let match;
       while ((match = scriptPattern.exec(content)) !== null) {
         let src = match[1];
+        // Remove template variable prefixes like {{ root }}, {{ site.baseurl }}, etc.
+        src = src.replace(/\{\{[^}]*\}\}/g, '').replace(/\{%[^%]*%\}/g, '');
         if (src.startsWith('/')) src = src.slice(1);
         else if (src.startsWith('./')) src = src.slice(2);
-        // Template variables like {{BASE_PATH}} - skip
-        if (src.includes('{{') || src.includes('{%')) continue;
+        // Skip external URLs and empty paths
+        if (src.startsWith('http') || src.startsWith('//') || !src) continue;
         entryPoints.add(prefix ? `${prefix}/${src}` : src);
       }
     } catch {}
   }
+
+  // Scan direct HTML files
+  for (const htmlFile of htmlFiles) {
+    scanHtmlFile(join(projectPath, htmlFile));
+  }
+
+  // Scan layout directories
+  for (const layoutDir of layoutDirs) {
+    const layoutPath = join(projectPath, layoutDir);
+    if (!existsSync(layoutPath)) continue;
+    try {
+      const files = readdirSync(layoutPath);
+      for (const file of files) {
+        if (file.endsWith('.html') || file.endsWith('.liquid') || file.endsWith('.erb')) {
+          scanHtmlFile(join(layoutPath, file));
+        }
+      }
+    } catch {}
+  }
+
+  // Also check docs directory layouts (common in documentation sites)
+  const docsLayoutDirs = ['docs/_layouts', 'docs/_includes', 'site/_layouts'];
+  for (const layoutDir of docsLayoutDirs) {
+    const layoutPath = join(projectPath, layoutDir);
+    if (!existsSync(layoutPath)) continue;
+    try {
+      const files = readdirSync(layoutPath);
+      for (const file of files) {
+        if (file.endsWith('.html') || file.endsWith('.liquid') || file.endsWith('.erb')) {
+          scanHtmlFile(join(layoutPath, file));
+        }
+      }
+    } catch {}
+  }
+
   return entryPoints;
 }
 
@@ -674,6 +830,401 @@ function extractViteReplacementEntryPoints(dir, prefix = '') {
       }
     } catch {}
   }
+  return entryPoints;
+}
+
+/**
+ * Extract entry points from build tool configs (rollup, webpack, vite, esbuild)
+ * These configs specify the source entry points that get compiled to dist/
+ */
+function extractBuildConfigEntryPoints(projectPath) {
+  const entryPoints = new Set();
+
+  // Rollup configs
+  const rollupConfigs = [
+    'rollup.config.js', 'rollup.config.mjs', 'rollup.config.ts',
+    'build/rollup-config.js', 'build/rollup.config.js'
+  ];
+  for (const configFile of rollupConfigs) {
+    const configPath = join(projectPath, configFile);
+    if (!existsSync(configPath)) continue;
+    try {
+      const content = readFileSync(configPath, 'utf-8');
+      // Match input field: input: './src/index.js' or input: { main: './src/main.js' }
+      const inputPatterns = [
+        /input\s*:\s*['"]([^'"]+)['"]/g,
+        /input\s*:\s*\{[^}]*['"]([^'"]+)['"]/g,
+        /input\s*:\s*\[[^\]]*['"]([^'"]+)['"]/g
+      ];
+      for (const pattern of inputPatterns) {
+        let match;
+        while ((match = pattern.exec(content)) !== null) {
+          let entry = match[1];
+          if (entry.startsWith('./')) entry = entry.slice(2);
+          if (entry.startsWith('/')) entry = entry.slice(1);
+          entryPoints.add(entry);
+        }
+      }
+    } catch {}
+  }
+
+  // Webpack configs
+  const webpackConfigs = [
+    'webpack.config.js', 'webpack.config.ts', 'webpack.config.mjs',
+    'webpack.common.js', 'webpack.prod.js', 'webpack.dev.js'
+  ];
+  for (const configFile of webpackConfigs) {
+    const configPath = join(projectPath, configFile);
+    if (!existsSync(configPath)) continue;
+    try {
+      const content = readFileSync(configPath, 'utf-8');
+      // Match entry field
+      const entryPatterns = [
+        /entry\s*:\s*['"]([^'"]+)['"]/g,
+        /entry\s*:\s*\{[^}]*:\s*['"]([^'"]+)['"]/g,
+        /entry\s*:\s*\[[^\]]*['"]([^'"]+)['"]/g
+      ];
+      for (const pattern of entryPatterns) {
+        let match;
+        while ((match = pattern.exec(content)) !== null) {
+          let entry = match[1];
+          if (entry.startsWith('./')) entry = entry.slice(2);
+          if (entry.startsWith('/')) entry = entry.slice(1);
+          entryPoints.add(entry);
+        }
+      }
+    } catch {}
+  }
+
+  // Vite configs
+  const viteConfigs = [
+    'vite.config.js', 'vite.config.ts', 'vite.config.mjs', 'vite.config.mts'
+  ];
+  for (const configFile of viteConfigs) {
+    const configPath = join(projectPath, configFile);
+    if (!existsSync(configPath)) continue;
+    try {
+      const content = readFileSync(configPath, 'utf-8');
+      // Match build.rollupOptions.input or build.lib.entry
+      const vitePatterns = [
+        /input\s*:\s*['"]([^'"]+)['"]/g,
+        /entry\s*:\s*['"]([^'"]+)['"]/g,
+        /input\s*:\s*\{[^}]*['"]([^'"]+)['"]/g,
+        /input\s*:\s*resolve\s*\([^)]*['"]([^'"]+)['"]\s*\)/g
+      ];
+      for (const pattern of vitePatterns) {
+        let match;
+        while ((match = pattern.exec(content)) !== null) {
+          let entry = match[1];
+          if (entry.startsWith('./')) entry = entry.slice(2);
+          if (entry.startsWith('/')) entry = entry.slice(1);
+          entryPoints.add(entry);
+        }
+      }
+    } catch {}
+  }
+
+  // Esbuild configs (usually in package.json scripts or esbuild.config.js)
+  const esbuildConfigs = ['esbuild.config.js', 'esbuild.config.mjs', 'esbuild.mjs'];
+  for (const configFile of esbuildConfigs) {
+    const configPath = join(projectPath, configFile);
+    if (!existsSync(configPath)) continue;
+    try {
+      const content = readFileSync(configPath, 'utf-8');
+      // Match entryPoints field
+      const esbuildPatterns = [
+        /entryPoints\s*:\s*\[[^\]]*['"]([^'"]+)['"]/g,
+        /entryPoints\s*:\s*\{[^}]*['"]([^'"]+)['"]/g
+      ];
+      for (const pattern of esbuildPatterns) {
+        let match;
+        while ((match = pattern.exec(content)) !== null) {
+          let entry = match[1];
+          if (entry.startsWith('./')) entry = entry.slice(2);
+          if (entry.startsWith('/')) entry = entry.slice(1);
+          entryPoints.add(entry);
+        }
+      }
+    } catch {}
+  }
+
+  // Tsup configs
+  const tsupConfigs = ['tsup.config.ts', 'tsup.config.js'];
+  for (const configFile of tsupConfigs) {
+    const configPath = join(projectPath, configFile);
+    if (!existsSync(configPath)) continue;
+    try {
+      const content = readFileSync(configPath, 'utf-8');
+      const tsupPatterns = [
+        /entry\s*:\s*\[[^\]]*['"]([^'"]+)['"]/g,
+        /entry\s*:\s*['"]([^'"]+)['"]/g
+      ];
+      for (const pattern of tsupPatterns) {
+        let match;
+        while ((match = pattern.exec(content)) !== null) {
+          let entry = match[1];
+          if (entry.startsWith('./')) entry = entry.slice(2);
+          if (entry.startsWith('/')) entry = entry.slice(1);
+          entryPoints.add(entry);
+        }
+      }
+    } catch {}
+  }
+
+  return entryPoints;
+}
+
+/**
+ * Extract entry points from Cargo.toml for Rust projects (including workspaces)
+ */
+function extractCargoEntryPoints(projectPath) {
+  const entryPoints = new Set();
+
+  // Process a single Cargo.toml
+  function processCargoToml(cargoPath, prefix = '') {
+    if (!existsSync(cargoPath)) return;
+
+    try {
+      const content = readFileSync(cargoPath, 'utf-8');
+      const dir = cargoPath.replace(/Cargo\.toml$/, '');
+      const relDir = dir.slice(projectPath.length + 1);
+
+      // Default entry points for Rust
+      const mainPath = join(dir, 'src/main.rs');
+      const libPath = join(dir, 'src/lib.rs');
+      if (existsSync(mainPath)) {
+        entryPoints.add(relDir + 'src/main.rs');
+      }
+      if (existsSync(libPath)) {
+        entryPoints.add(relDir + 'src/lib.rs');
+      }
+
+      // [[bin]] targets
+      const binPattern = /\[\[bin\]\][^[]*?path\s*=\s*["']([^"']+)["']/g;
+      let match;
+      while ((match = binPattern.exec(content)) !== null) {
+        entryPoints.add(relDir + match[1]);
+      }
+
+      // [[example]] targets
+      const examplePattern = /\[\[example\]\][^[]*?path\s*=\s*["']([^"']+)["']/g;
+      while ((match = examplePattern.exec(content)) !== null) {
+        entryPoints.add(relDir + match[1]);
+      }
+
+      // [[bench]] targets
+      const benchPattern = /\[\[bench\]\][^[]*?path\s*=\s*["']([^"']+)["']/g;
+      while ((match = benchPattern.exec(content)) !== null) {
+        entryPoints.add(relDir + match[1]);
+      }
+
+      // [lib] path
+      const libMatch = content.match(/\[lib\][^[]*?path\s*=\s*["']([^"']+)["']/);
+      if (libMatch) {
+        entryPoints.add(relDir + libMatch[1]);
+      }
+
+      // [workspace] members - recursively process workspace members
+      const membersMatch = content.match(/\[workspace\][^[]*members\s*=\s*\[([\s\S]*?)\]/);
+      if (membersMatch) {
+        const membersStr = membersMatch[1];
+        const members = membersStr.match(/["']([^"']+)["']/g);
+        if (members) {
+          for (const member of members) {
+            const memberPath = member.replace(/['"]/g, '');
+            // Handle glob patterns like "crates/*"
+            if (memberPath.includes('*')) {
+              const basePath = memberPath.replace(/\/?\*.*$/, '');
+              const memberDir = join(projectPath, basePath);
+              if (existsSync(memberDir)) {
+                try {
+                  const subdirs = readdirSync(memberDir, { withFileTypes: true });
+                  for (const subdir of subdirs) {
+                    if (subdir.isDirectory()) {
+                      const subCargoPath = join(memberDir, subdir.name, 'Cargo.toml');
+                      processCargoToml(subCargoPath);
+                    }
+                  }
+                } catch {}
+              }
+            } else {
+              const memberCargoPath = join(projectPath, memberPath, 'Cargo.toml');
+              processCargoToml(memberCargoPath);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  processCargoToml(join(projectPath, 'Cargo.toml'));
+
+  // Also scan for nested Cargo.toml files that might not be workspace members
+  // This handles cases like crates/foo/bar/Cargo.toml (nested crates)
+  function scanForNestedCargo(dir, depth = 0) {
+    if (depth > 5) return; // Limit recursion depth
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name === 'target' || entry.name === '.git' || entry.name === 'node_modules') continue;
+        const subdir = join(dir, entry.name);
+        const cargoPath = join(subdir, 'Cargo.toml');
+        if (existsSync(cargoPath)) {
+          processCargoToml(cargoPath);
+        }
+        scanForNestedCargo(subdir, depth + 1);
+      }
+    } catch {}
+  }
+  scanForNestedCargo(projectPath);
+
+  return entryPoints;
+}
+
+/**
+ * Extract entry points from composer.json for PHP projects
+ */
+function extractComposerEntryPoints(projectPath) {
+  const entryPoints = new Set();
+  const composerPath = join(projectPath, 'composer.json');
+  if (!existsSync(composerPath)) return entryPoints;
+
+  try {
+    const content = readFileSync(composerPath, 'utf-8');
+    const composer = JSON.parse(content);
+
+    // Autoload PSR-4
+    const autoload = composer.autoload || {};
+    const psr4 = autoload['psr-4'] || {};
+    for (const [namespace, path] of Object.entries(psr4)) {
+      // Mark the autoload directory as containing entry points
+      const dir = Array.isArray(path) ? path[0] : path;
+      if (typeof dir === 'string') {
+        // Files in PSR-4 directories are autoloaded
+        entryPoints.add(dir.replace(/\/$/, '') + '/');
+      }
+    }
+
+    // Autoload files (explicitly loaded)
+    const files = autoload.files || [];
+    for (const file of files) {
+      entryPoints.add(file);
+    }
+
+    // Bin scripts
+    const bin = composer.bin || [];
+    for (const binFile of (Array.isArray(bin) ? bin : [bin])) {
+      entryPoints.add(binFile);
+    }
+  } catch {}
+
+  return entryPoints;
+}
+
+/**
+ * Extract entry points from nested package.json files (sub-packages)
+ * Handles cases like VS Code extensions where main points to out/ but source is in src/
+ */
+function extractNestedPackageEntryPoints(projectPath, parsedFiles) {
+  const entries = [];
+
+  // Find all package.json files by checking all ancestor directories of parsed files
+  const checkedDirs = new Set();
+  for (const file of parsedFiles) {
+    // Check all ancestor directories for package.json
+    const parts = file.relativePath.split('/');
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const dir = parts.slice(0, i).join('/');
+      if (checkedDirs.has(dir)) continue;
+      checkedDirs.add(dir);
+
+      const pkgPath = join(projectPath, dir, 'package.json');
+      if (!existsSync(pkgPath)) continue;
+
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+        const mainField = pkg.main || '';
+
+        // Check if main points to compiled output (out/, dist/, build/)
+        if (/^\.?\/?(?:out|dist|build)\//.test(mainField)) {
+          // Map to source: out/main -> src/main.ts
+          let sourcePath = mainField
+            .replace(/^\.?\/?(?:out|dist|build)\//, 'src/')
+            .replace(/\.js$/, '');
+
+          // Try to find matching source file with various extensions
+          const candidates = [
+            `${dir}/${sourcePath}.ts`,
+            `${dir}/${sourcePath}.tsx`,
+            `${dir}/${sourcePath}.mts`,
+            `${dir}/${sourcePath}.js`,
+            `${dir}/${sourcePath}.mjs`,
+          ];
+
+          for (const candidate of candidates) {
+            const found = parsedFiles.find(f => f.relativePath === candidate);
+            if (found) {
+              entries.push({ file: candidate, reason: `Nested package entry: ${dir}` });
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Extract entry points from Gemfile/gemspec for Ruby projects
+ */
+function extractGemEntryPoints(projectPath) {
+  const entryPoints = new Set();
+
+  // Check for gemspec
+  try {
+    const files = readdirSync(projectPath);
+    for (const file of files) {
+      if (file.endsWith('.gemspec')) {
+        const gemspecPath = join(projectPath, file);
+        const content = readFileSync(gemspecPath, 'utf-8');
+        // Extract lib directory
+        const libMatch = content.match(/require_paths?\s*=\s*\[['"]([^'"]+)['"]/);
+        if (libMatch) {
+          entryPoints.add(libMatch[1] + '/');
+        } else {
+          // Default lib directory
+          if (existsSync(join(projectPath, 'lib'))) {
+            entryPoints.add('lib/');
+          }
+        }
+        // Executables
+        const binMatch = content.match(/executables\s*=\s*\[([^\]]+)\]/);
+        if (binMatch) {
+          const bins = binMatch[1].match(/['"]([^'"]+)['"]/g);
+          if (bins) {
+            for (const bin of bins) {
+              entryPoints.add('bin/' + bin.replace(/['"]/g, ''));
+            }
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // Rails conventions
+  if (existsSync(join(projectPath, 'config/application.rb'))) {
+    entryPoints.add('config/application.rb');
+    entryPoints.add('config/routes.rb');
+    entryPoints.add('app/controllers/');
+    entryPoints.add('app/models/');
+    entryPoints.add('app/helpers/');
+    entryPoints.add('app/jobs/');
+    entryPoints.add('app/mailers/');
+  }
+
   return entryPoints;
 }
 

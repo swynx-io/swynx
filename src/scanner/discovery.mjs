@@ -83,6 +83,9 @@ export function getSupportedExtensions() {
     '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts',
     '.py', '.pyi',
     '.go',
-    '.java', '.kt', '.kts'
+    '.java', '.kt', '.kts',
+    '.php', '.phtml',
+    '.rb', '.rake', '.gemspec', '.ru',
+    '.rs'
   ];
 }

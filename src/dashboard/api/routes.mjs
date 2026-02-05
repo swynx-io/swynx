@@ -2271,7 +2271,7 @@ export async function createRoutes() {
           duplicateFunctions: duplicateFunctions.length,
           totalBytes: totalDuplicateBytes,
           totalFormatted: formatBytes(totalDuplicateBytes),
-          potentialSavings: formatBytes(duplicates.potentialSavings || Math.floor(totalDuplicateBytes * 0.5))
+          potentialSavings: duplicates.potentialSavings || formatBytes(Math.floor(totalDuplicateBytes * 0.5))
         },
         similarBlocks: similarBlocks.slice(0, 30).map(b => ({
           id: b.id,
