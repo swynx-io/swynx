@@ -15,6 +15,7 @@ NC='\033[0m'
 REPO="swynx-io/swynx"
 INSTALL_DIR="${SWYNX_INSTALL_DIR:-$HOME/.swynx}"
 AI_MODEL="qwen2.5-coder:3b"
+DASHBOARD_PORT="${SWYNX_PORT:-8999}"
 
 print_banner() {
   echo ""
@@ -28,6 +29,14 @@ print_banner() {
   echo -e "${NC}"
   echo "   Dead code detection that learns"
   echo ""
+}
+
+stop_existing() {
+  # Kill any existing dashboard processes
+  pkill -f "node.*dashboard" 2>/dev/null || true
+  pkill -f "swynx.*dashboard" 2>/dev/null || true
+  fuser -k $DASHBOARD_PORT/tcp 2>/dev/null || true
+  sleep 1
 }
 
 check_node() {
@@ -125,16 +134,36 @@ install_ai_engine() {
     fi
   fi
 
-  # Download AI model
-  echo "Downloading model (~1.8GB)..."
-  ollama pull "$AI_MODEL"
-
-  # Verify
-  if ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
-    echo -e "${GREEN}✓ Swynx Engine ready${NC}"
-  else
-    echo -e "${YELLOW}⚠ Engine setup incomplete - run 'ollama pull ${AI_MODEL}' manually${NC}"
+  # Download AI model if not present
+  if ! ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
+    echo "Downloading model (~1.8GB)..."
+    ollama pull "$AI_MODEL"
   fi
+
+  # Pre-warm the model
+  echo "Warming up AI..."
+  curl -s http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1
+
+  echo -e "${GREEN}✓ Swynx Engine ready${NC}"
+}
+
+start_dashboard() {
+  echo -e "${BLUE}Starting Dashboard...${NC}"
+
+  # Start dashboard in background
+  cd "$INSTALL_DIR"
+  nohup node bin/swynx dashboard --port $DASHBOARD_PORT > /tmp/swynx-dashboard.log 2>&1 &
+
+  # Wait for dashboard to be ready
+  for i in {1..10}; do
+    if curl -s "http://127.0.0.1:$DASHBOARD_PORT/api/health" > /dev/null 2>&1; then
+      echo -e "${GREEN}✓ Dashboard running${NC}"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo -e "${YELLOW}⚠ Dashboard may still be starting...${NC}"
 }
 
 print_success() {
@@ -142,24 +171,25 @@ print_success() {
 
   echo ""
   echo -e "${GREEN}════════════════════════════════════════════${NC}"
-  echo -e "${GREEN}  Swynx installed successfully!${NC}"
+  echo -e "${GREEN}  Swynx is ready!${NC}"
   echo -e "${GREEN}════════════════════════════════════════════${NC}"
   echo ""
-  echo "  Run your first scan:"
+  echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:${DASHBOARD_PORT}${NC}"
   echo ""
+  echo "  CLI commands:"
   echo -e "    ${CYAN}swynx scan .${NC}              # Basic scan"
   echo -e "    ${CYAN}swynx scan . --qualify${NC}   # With AI analysis"
   echo ""
-  echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:8999${NC}"
-  echo -e "  Docs:      ${BLUE}https://github.com/swynx-io/swynx${NC}"
+  echo -e "  Docs: ${BLUE}https://github.com/swynx-io/swynx${NC}"
   echo ""
 }
 
 # Main
 print_banner
+stop_existing
 check_node
 install_swynx
 setup_path
 install_ai_engine
+start_dashboard
 print_success
-# Updated Thu Feb  5 01:20:18 UTC 2026
