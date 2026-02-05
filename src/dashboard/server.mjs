@@ -154,12 +154,19 @@ export async function startDashboard(options = {}) {
       openBrowser(localUrl);
     }
 
-    // Pre-warm AI model in background
+    // Pre-warm AI model in background and keep it warm
     (async () => {
       try {
         const { warmModel } = await import('../ai/ollama.mjs');
         await warmModel();
         console.log('  Swynx Engine: Model pre-warmed ✓');
+
+        // Keep model warm every 2 minutes (Ollama unloads after 5min idle)
+        setInterval(async () => {
+          try {
+            await warmModel();
+          } catch { /* ignore */ }
+        }, 2 * 60 * 1000);
       } catch (e) {
         // AI not available, skip silently
       }

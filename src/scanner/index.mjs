@@ -62,11 +62,21 @@ const ENTRY_POINT_PATTERNS = [
   // Tests (multi-language)
   /\/tests?\//, /^tests?\//,
   /\/specs?\//, /^specs?\//,   // Test directories (spec, specs)
-  /\/e2e\//, /__checks__\//,
-  // Examples, samples, and debug
+  /\/e2e\//, /__checks__\//, /\/intTest\//, /^intTest\//,
+  // Benchmarks
+  /\/benchmarks?\//, /^benchmarks?\//,
+  // Docker/CI scripts
+  /docker.*\.sh$/, /\.dockerfile$/i,
+  // Examples, samples, debug, and documentation
   /\/examples?\//, /^examples?\//,
   /\/samples(-dev)?\//, /^samples(-dev)?\//,
   /\/debug\//, /^debug\//,
+  /\/docs?\//, /^docs?\//, /-docs\//, /_docs\//,
+  /\/documentation\//, /^documentation\//,
+  /\/recipes\//, /^recipes\//,
+  // Build tools and generators
+  /\/tools\//, /^tools\//,
+  /\/generator\//, /\.generator\.[jt]s$/,
   // Dynamic loading directories
   /\/composables?\//, /\/stores\//, /\/routers?\//,
   // Enterprise modules & backend modules
@@ -112,6 +122,7 @@ const ENTRY_POINT_PATTERNS = [
   /config\/.*\.php$/, /resources\/views\//,
   // Ruby entry points
   /config\.ru$/, /Rakefile$/, /Gemfile$/,
+  /\/homebrew\//, /^homebrew\//, /\.rb$.*homebrew/,
   /app\/controllers\//, /app\/models\//, /app\/helpers\//,
   /app\/jobs\//, /app\/mailers\//, /app\/views\//,
   /config\/routes\.rb$/, /config\/application\.rb$/,
@@ -131,7 +142,23 @@ const ENTRY_POINT_PATTERNS = [
   /\/syntax_helpers\/[^/]+\.rs$/,
   /\/completions\/[^/]+\.rs$/,
   /\/tracing\/[^/]+\.rs$/,
-  /\/toolchain_info\/[^/]+\.rs$/
+  /\/toolchain_info\/[^/]+\.rs$/,
+  // Gradle/Groovy build files (build config, not dead code)
+  /build\.gradle(\.kts)?$/, /settings\.gradle(\.kts)?$/,
+  /\/buildSrc\//, /^buildSrc\//,
+  /gradle\/.*\.gradle(\.kts)?$/,
+  /Jenkinsfile$/,
+  // Makefile and CMake (build config)
+  /Makefile$/, /makefile$/, /CMakeLists\.txt$/,
+  // C/C++ extension source directories (Python, Ruby, Node native modules)
+  /\/src\/.*\.(c|cpp|h|hpp)$/, /\/_core\/.*\.(c|cpp|h|hpp)$/,
+  /\/code_generators\//, /\/include\/.*\.(h|hpp)$/,
+  // Elixir entry points
+  /mix\.exs$/, /config\/.*\.exs$/,
+  // Haskell entry points
+  /\.cabal$/, /stack\.yaml$/, /Setup\.hs$/,
+  // Nim entry points
+  /\.nimble$/
 ];
 
 /**

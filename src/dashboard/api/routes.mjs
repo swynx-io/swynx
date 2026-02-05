@@ -3047,6 +3047,12 @@ export async function createRoutes() {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    // Keep-alive ping every 10s to prevent timeout
+    const keepAlive = setInterval(() => {
+      res.write(`: keep-alive\n\n`);
+    }, 10000);
 
     try {
       const { projectPath, deadFiles } = req.body;
@@ -3059,7 +3065,7 @@ export async function createRoutes() {
       const { ensureEngine } = await import('../../ai/engine.mjs');
       const { qualifyFilesBatch } = await import('../../ai/qualifier.mjs');
       const { warmModel } = await import('../../ai/ollama.mjs');
-      const BATCH_SIZE = 5;
+      const BATCH_SIZE = 3;
 
       // Ensure engine is ready first
       res.write(`data: ${JSON.stringify({ type: 'status', message: 'Checking Swynx Engine...' })}\n\n`);
@@ -3163,6 +3169,7 @@ export async function createRoutes() {
       res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
     }
 
+    clearInterval(keepAlive);
     res.end();
   });
 

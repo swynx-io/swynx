@@ -80,12 +80,73 @@ export function discoverFiles(rootPath, options = {}) {
 
 export function getSupportedExtensions() {
   return [
-    '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts',
+    // JavaScript/TypeScript
+    '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.mts', '.cts', '.vue',
+    // Python
     '.py', '.pyi',
+    // Go
     '.go',
-    '.java', '.kt', '.kts',
-    '.php', '.phtml',
+    // Java
+    '.java',
+    // Kotlin
+    '.kt', '.kts',
+    // PHP
+    '.php', '.phtml', '.php3', '.php4', '.php5', '.phps',
+    // Ruby
     '.rb', '.rake', '.gemspec', '.ru',
-    '.rs'
+    // Rust
+    '.rs',
+    // C#
+    '.cs',
+    // Dart
+    '.dart',
+    // Swift
+    '.swift',
+    // Scala
+    '.scala', '.sc',
+    // Elixir
+    '.ex', '.exs',
+    // Haskell
+    '.hs', '.lhs',
+    // Lua
+    '.lua',
+    // C/C++
+    '.c', '.h', '.cpp', '.hpp', '.cc', '.hh', '.cxx', '.hxx', '.c++', '.h++',
+    // Perl
+    '.pl', '.pm', '.t',
+    // R
+    '.r', '.R', '.Rmd',
+    // Clojure
+    '.clj', '.cljs', '.cljc', '.edn',
+    // F#
+    '.fs', '.fsi', '.fsx',
+    // OCaml
+    '.ml', '.mli',
+    // Julia
+    '.jl',
+    // Zig
+    '.zig',
+    // Nim
+    '.nim', '.nims', '.nimble',
+    // Erlang
+    '.erl', '.hrl',
+    // Groovy
+    '.groovy', '.gradle', '.gvy',
+    // Crystal
+    '.cr',
+    // V
+    '.v', '.vv',
+    // Objective-C
+    '.m', '.mm',
+    // Shell
+    '.sh', '.bash', '.zsh', '.fish',
+    // PowerShell
+    '.ps1', '.psm1', '.psd1',
+    // COBOL
+    '.cob', '.cbl', '.cpy',
+    // Fortran
+    '.f', '.f90', '.f95', '.f03', '.f08', '.for', '.ftn',
+    // VB.NET
+    '.vb'
   ];
 }
