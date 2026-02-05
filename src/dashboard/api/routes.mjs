@@ -1,7 +1,7 @@
 // src/dashboard/api/routes.mjs - Swynx API routes
 
 import { Router } from 'express';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join, basename, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
@@ -12,6 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(homedir(), '.swynx');
 const SCANS_FILE = join(DATA_DIR, 'scans.json');
 const PROJECTS_FILE = join(DATA_DIR, 'projects.json');
+const LICENSE_FILE = join(DATA_DIR, 'license.json');
 
 // Ensure data directory exists
 if (!existsSync(DATA_DIR)) {
@@ -427,9 +428,47 @@ export async function createRoutes() {
     });
   });
 
-  // === License (always valid for swynx) ===
+  // === License ===
+
+  function getLicense() {
+    try {
+      if (existsSync(LICENSE_FILE)) {
+        return JSON.parse(readFileSync(LICENSE_FILE, 'utf-8'));
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function saveLicense(license) {
+    writeFileSync(LICENSE_FILE, JSON.stringify(license, null, 2));
+  }
+
+  function parseLicenseKey(key) {
+    // Format: PREFIX-XXXX-XXXX-XXXX-XXXX
+    const match = key.match(/^(SWYX|TRIAL)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
+    if (!match) return null;
+    const prefix = match[1];
+    return {
+      valid: true,
+      type: prefix === 'TRIAL' ? 'trial' : 'enterprise',
+      tier: prefix === 'TRIAL' ? 'trial' : 'enterprise',
+      features: ['unlimited-projects', 'ai-qualification', 'priority-support']
+    };
+  }
 
   router.get('/license', (req, res) => {
+    const stored = getLicense();
+    if (stored && stored.key) {
+      const parsed = parseLicenseKey(stored.key);
+      if (parsed) {
+        res.json({
+          success: true,
+          license: { ...parsed, key: stored.key, activatedAt: stored.activatedAt }
+        });
+        return;
+      }
+    }
+    // Default: open-source mode
     res.json({
       success: true,
       license: {
@@ -441,11 +480,43 @@ export async function createRoutes() {
   });
 
   router.get('/license/status', (req, res) => {
-    res.json({
-      success: true,
-      valid: true,
-      type: 'open-source'
-    });
+    const stored = getLicense();
+    if (stored && stored.key) {
+      const parsed = parseLicenseKey(stored.key);
+      if (parsed) {
+        res.json({ success: true, ...parsed, activated: true });
+        return;
+      }
+    }
+    res.json({ success: true, valid: true, type: 'open-source', activated: false });
+  });
+
+  router.post('/license/activate', (req, res) => {
+    const { key } = req.body || {};
+    if (!key) {
+      return res.status(400).json({ success: false, error: 'License key required' });
+    }
+
+    const parsed = parseLicenseKey(key);
+    if (!parsed) {
+      return res.status(400).json({ success: false, error: 'Invalid license key format' });
+    }
+
+    const license = {
+      key,
+      activatedAt: new Date().toISOString(),
+      ...parsed
+    };
+    saveLicense(license);
+
+    res.json({ success: true, license });
+  });
+
+  router.post('/license/deactivate', (req, res) => {
+    if (existsSync(LICENSE_FILE)) {
+      unlinkSync(LICENSE_FILE);
+    }
+    res.json({ success: true, message: 'License deactivated' });
   });
 
   // === System Info ===
