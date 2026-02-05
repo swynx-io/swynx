@@ -3036,7 +3036,7 @@ export async function createRoutes() {
   // Warm up the model (call this in background to speed up first qualification)
   router.post('/ai/warm', async (req, res) => {
     try {
-      const { warmModel } = await import('../../../../swynx/src/ai/ollama.mjs');
+      const { warmModel } = await import('../../ai/ollama.mjs');
       await warmModel();
       res.json({ success: true, message: 'Model warmed' });
     } catch (error) {
