@@ -80,11 +80,17 @@ export async function createRoutes() {
 
   router.get('/projects/registered', (req, res) => {
     const projects = loadProjects();
+    const stored = getLicense();
+    const hasLicense = stored && stored.key && parseLicenseKey(stored.key);
     res.json({
       success: true,
       projects,
+      hasLicense: !!hasLicense,
+      tier: hasLicense ? hasLicense.tier : 'open-source',
+      tierName: hasLicense ? (hasLicense.tier === 'enterprise' ? 'Enterprise' : 'Trial') : 'Open Source',
       slotsUsed: projects.length,
-      slotsTotal: 999 // Unlimited in swynx
+      slotsTotal: 999, // Unlimited in swynx
+      slotsRemaining: 999 - projects.length
     });
   });
 
@@ -486,11 +492,21 @@ export async function createRoutes() {
     if (stored && stored.key) {
       const parsed = parseLicenseKey(stored.key);
       if (parsed) {
-        res.json({ success: true, ...parsed, activated: true });
+        // Return format expected by frontend
+        res.json({
+          success: true,
+          active: true,
+          tier: parsed.tier,
+          tierName: parsed.tier === 'enterprise' ? 'Enterprise' : parsed.tier === 'trial' ? 'Trial' : 'Open Source',
+          features: parsed.features,
+          expires: null, // No expiry for local activation
+          daysRemaining: null,
+          expired: false
+        });
         return;
       }
     }
-    res.json({ success: true, valid: true, type: 'open-source', activated: false });
+    res.json({ success: true, active: false, tier: 'open-source', tierName: 'Open Source' });
   });
 
   router.post('/license/activate', (req, res) => {
