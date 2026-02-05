@@ -6,9 +6,7 @@ import { networkInterfaces, platform } from 'os';
 import { existsSync, readdirSync, statSync } from 'fs';
 import { exec } from 'child_process';
 import { createRoutes } from './api/routes.mjs';
-import { fileURLToPath } from 'url';
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = join(__dirname, '..');
+import { DATA_DIR } from '../config/index.mjs';
 
 /**
  * Open URL in default browser
@@ -41,7 +39,7 @@ function getPublicDir() {
   // Check common locations for public directory
   const locations = [
     join(DATA_DIR, 'public'),               // Primary: DATA_DIR/public (works for both systemd and user)
-    '/var/lib/swynx/public',           // Fallback: explicit systemd path
+    '/var/lib/peer-audit/public',           // Fallback: explicit systemd path
     join(process.cwd(), 'src/dashboard/public'),
     join(process.cwd(), 'public'),
     join(dirname(process.argv[1]), 'public'),

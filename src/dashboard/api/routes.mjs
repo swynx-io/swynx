@@ -2,7 +2,8 @@
 // API routes for Codebase Audit Dashboard
 
 import { Router } from 'express';
-import { scanProject } from '../../scanner/index.mjs';
+// Use PEER Audit's full scanner for complete analysis
+import scanProject from '/var/www/peer-audit/src/scanner/index.mjs';
 import {
   initDatabase,
   saveScan,
@@ -514,42 +515,12 @@ export async function createRoutes() {
         return res.status(400).json({ success: false, error: 'projectPath is required' });
       }
 
+      // Use PEER Audit's full scanner - returns complete analysis
       const scanResult = await scanProject(projectPath, config || {});
 
-      // Transform Swynx scanner output to storage format
-      const result = {
-        id: Date.now().toString(),
-        projectPath,
-        projectName: projectPath.split('/').pop(),
-        scannedAt: new Date().toISOString(),
-        duration: 0,
-        healthScore: { score: Math.round(100 - parseFloat(scanResult.summary?.deadRate || '0')) },
-        summary: {
-          wastePercent: parseFloat(scanResult.summary?.deadRate || '0'),
-          wasteSizeBytes: scanResult.summary?.totalDeadBytes || 0,
-          totalSizeBytes: scanResult.summary?.totalBytes || 0,
-          totalFiles: scanResult.summary?.totalFiles || 0,
-          deadFiles: scanResult.deadFiles?.length || 0,
-          entryPoints: scanResult.summary?.entryPoints || 0,
-          reachableFiles: scanResult.summary?.reachableFiles || 0
-        },
-        deadCode: {
-          files: (scanResult.deadFiles || []).map(f => ({
-            path: f.file,
-            size: f.size,
-            lines: f.lines,
-            language: f.language,
-            exports: (f.exports || []).map(e => e.name || e)
-          }))
-        },
-        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 } },
-        outdated: { packages: [] },
-        emissions: { monthly: { kgCO2: 0 } }
-      };
+      await saveScan(scanResult);
 
-      await saveScan(result);
-
-      res.json({ success: true, scan: result });
+      res.json({ success: true, scan: scanResult });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
     }
@@ -609,10 +580,23 @@ export async function createRoutes() {
 
     // Progress callback for the scanner
     const onProgress = (progress) => {
-      const { phase, percent, detail, current, total } = progress;
+      // Normalize progress format from scanner
+      // Scanner sends: { phase, message?, filesFound?, current?, total? }
+      // Route expects: { phase, percent, detail, current, total }
+      const { phase, message, filesFound, current: rawCurrent, total: rawTotal } = progress;
+
+      // Derive current/total - discovery sends filesFound instead of current
+      const current = rawCurrent ?? filesFound ?? 0;
+      const total = rawTotal ?? 0;
+
+      // Calculate percent if we have current/total
+      const percent = total > 0 ? (current / total) * 100 : 0;
+
+      // Use message as detail
+      const detail = message || '';
 
       // Debug log every progress event
-      console.log(`[SCAN] ${phase} | ${Math.round(percent)}% | ${detail?.slice(-40)} | ${current}/${total}`);
+      console.log(`[SCAN] ${phase} | ${Math.round(percent)}% | ${detail?.slice(-40) || '-'} | ${current}/${total}`);
 
       // Track phase and state for heartbeat
       lastPhase = phase;
@@ -704,41 +688,11 @@ export async function createRoutes() {
 
     try {
       // Run the scan with progress callback and performance settings
+      // Using PEER Audit's full scanner - returns complete analysis
       const workers = getSetting('performance.workers', 0) || undefined;
       const scanResult = await scanProject(projectPath, { onProgress, workers });
 
-      // Transform Swynx scanner output to storage format
-      const result = {
-        id: Date.now().toString(),
-        projectPath,
-        projectName: projectPath.split('/').pop(),
-        scannedAt: new Date().toISOString(),
-        duration: 0,
-        healthScore: { score: Math.round(100 - parseFloat(scanResult.summary?.deadRate || '0')) },
-        summary: {
-          wastePercent: parseFloat(scanResult.summary?.deadRate || '0'),
-          wasteSizeBytes: scanResult.summary?.totalDeadBytes || 0,
-          totalSizeBytes: scanResult.summary?.totalBytes || 0,
-          totalFiles: scanResult.summary?.totalFiles || 0,
-          deadFiles: scanResult.deadFiles?.length || 0,
-          entryPoints: scanResult.summary?.entryPoints || 0,
-          reachableFiles: scanResult.summary?.reachableFiles || 0
-        },
-        deadCode: {
-          files: (scanResult.deadFiles || []).map(f => ({
-            path: f.file,
-            size: f.size,
-            lines: f.lines,
-            language: f.language,
-            exports: (f.exports || []).map(e => e.name || e)
-          }))
-        },
-        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 } },
-        outdated: { packages: [] },
-        emissions: { monthly: { kgCO2: 0 } }
-      };
-
-      await saveScan(result);
+      await saveScan(scanResult);
 
       // Pre-warm AI model in background after scan (so it's ready for qualification)
       import('../../ai/ollama.mjs')
@@ -748,7 +702,7 @@ export async function createRoutes() {
       // Send completion event with full result
       res.write(`data: ${JSON.stringify({
         type: 'complete',
-        scan: result,
+        scan: scanResult,
         timestamp: Date.now()
       })}\n\n`);
 
@@ -1175,16 +1129,17 @@ export async function createRoutes() {
       }
 
       const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
-      const deadCode = scanData.details?.deadCode || {};
+      // Support both PEER Audit format (details.deadCode) and Swynx format (deadCode)
+      const deadCode = scanData.details?.deadCode || scanData.deadCode || {};
 
-      // Support both old (orphanFiles) and new (fullyDeadFiles/partiallyDeadFiles) format
-      const fullyDeadFiles = deadCode.fullyDeadFiles || deadCode.orphanFiles || [];
+      // Support multiple formats: fullyDeadFiles, orphanFiles, files (Swynx)
+      const fullyDeadFiles = deadCode.fullyDeadFiles || deadCode.orphanFiles || deadCode.files || [];
       const partiallyDeadFiles = deadCode.partiallyDeadFiles || [];
       const entryPoints = deadCode.entryPoints || [];
       const summary = deadCode.summary || {};
 
-      // Calculate totals
-      const fullyDeadBytes = fullyDeadFiles.reduce((sum, f) => sum + (f.sizeBytes || 0), 0);
+      // Calculate totals (support both sizeBytes and size field names)
+      const fullyDeadBytes = fullyDeadFiles.reduce((sum, f) => sum + (f.sizeBytes || f.size || 0), 0);
       const partiallyDeadBytes = partiallyDeadFiles.reduce((sum, f) => sum + (f.summary?.deadBytes || 0), 0);
       const totalDeadBytes = summary.totalDeadBytes || (fullyDeadBytes + partiallyDeadBytes);
       const totalDeadExports = summary.totalDeadExports ||
@@ -1239,11 +1194,12 @@ export async function createRoutes() {
           ]
         },
         fullyDeadFiles: fullyDeadFiles.map(f => ({
-          file: f.file || f.relativePath,
-          relativePath: f.relativePath || f.file,
-          sizeBytes: f.sizeBytes || 0,
-          sizeFormatted: f.sizeFormatted || formatBytes(f.sizeBytes || 0),
-          lineCount: f.lineCount,
+          file: f.file || f.relativePath || f.path,
+          relativePath: f.relativePath || f.file || f.path,
+          sizeBytes: f.sizeBytes || f.size || 0,
+          sizeFormatted: f.sizeFormatted || formatBytes(f.sizeBytes || f.size || 0),
+          lineCount: f.lineCount || f.lines,
+          language: f.language,
           status: f.status || 'fully-dead',
           exports: f.exports || [],
           summary: f.summary,
@@ -1280,10 +1236,11 @@ export async function createRoutes() {
       }
 
       const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
-      const deadCode = scanData.details?.deadCode || {};
+      // Support both PEER Audit format (details.deadCode) and Swynx format (deadCode)
+      const deadCode = scanData.details?.deadCode || scanData.deadCode || {};
 
-      // Support both old and new format
-      const fullyDeadFiles = deadCode.fullyDeadFiles || deadCode.orphanFiles || [];
+      // Support multiple formats: fullyDeadFiles, orphanFiles, files (Swynx)
+      const fullyDeadFiles = deadCode.fullyDeadFiles || deadCode.orphanFiles || deadCode.files || [];
       const partiallyDeadFiles = deadCode.partiallyDeadFiles || [];
       const allDeadFiles = [...fullyDeadFiles, ...partiallyDeadFiles];
 
@@ -2843,8 +2800,9 @@ export async function createRoutes() {
         return res.end();
       }
 
-      const { ensureEngine } = await import('../../../../swynx/src/ai/engine.mjs');
-      const { qualify } = await import('../../../../swynx/src/ai/qualifier.mjs');
+      const { ensureEngine } = await import('../../ai/engine.mjs');
+      const { qualifyFile } = await import('../../ai/qualifier.mjs');
+      const { warmModel } = await import('../../ai/ollama.mjs');
 
       // Ensure engine is ready first
       res.write(`data: ${JSON.stringify({ type: 'status', message: 'Checking Swynx Engine...' })}\n\n`);
@@ -2858,40 +2816,80 @@ export async function createRoutes() {
         return res.end();
       }
 
-      res.write(`data: ${JSON.stringify({ type: 'status', message: 'Qualifying dead files...' })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'status', message: 'Swynx Engine ready.' })}\n\n`);
 
-      const results = {
-        totalFiles: req.body.totalFiles || 0,
-        deadFiles: deadFiles.map(f => ({
-          path: f.path || f.file,
-          size: f.size || 0,
-          lines: f.lines || 0,
-          language: f.language || 'javascript',
-          exports: f.exports || []
-        }))
-      };
+      // Warm model before starting qualification
+      res.write(`data: ${JSON.stringify({ type: 'status', message: 'Warming up model...' })}\n\n`);
+      await warmModel();
+      res.write(`data: ${JSON.stringify({ type: 'status', message: 'Model ready. Starting qualification...' })}\n\n`);
 
-      const qualified = await qualify(results, { projectPath }, {
-        qualifyLimit: req.body.limit || 50,
-        verbose: false
-      });
+      const limit = req.body.limit || 50;
+      const filesToQualify = deadFiles.slice(0, limit).map(f => ({
+        path: f.path || f.file,
+        size: f.size || 0,
+        lines: f.lines || 0,
+        language: f.language || 'javascript',
+        exports: f.exports || []
+      }));
 
-      // Send individual file results
-      for (const file of qualified.deadFiles) {
-        if (file.aiQualification) {
+      const total = filesToQualify.length;
+      const startTime = Date.now();
+      const counts = { 'confirmed-dead': 0, 'likely-dead': 0, uncertain: 0, 'likely-alive': 0, 'false-positive': 0 };
+
+      // Qualify files one at a time with progress updates
+      for (let i = 0; i < total; i++) {
+        const file = filesToQualify[i];
+        const progress = Math.round(((i + 1) / total) * 100);
+
+        res.write(`data: ${JSON.stringify({
+          type: 'progress',
+          current: i + 1,
+          total,
+          progress,
+          message: `Qualifying ${file.path}...`
+        })}\n\n`);
+
+        try {
+          const qual = await qualifyFile(file, { projectPath });
+          file.aiQualification = qual;
+
+          if (qual.category && counts[qual.category] !== undefined) {
+            counts[qual.category]++;
+          }
+
           res.write(`data: ${JSON.stringify({
             type: 'file',
             path: file.path,
-            qualification: file.aiQualification
+            qualification: qual,
+            progress
+          })}\n\n`);
+        } catch (err) {
+          file.aiQualification = { error: err.message };
+          res.write(`data: ${JSON.stringify({
+            type: 'file',
+            path: file.path,
+            qualification: { error: err.message },
+            progress
           })}\n\n`);
         }
       }
 
+      const aiSummary = {
+        filesQualified: total,
+        confirmedDead: counts['confirmed-dead'] + counts['likely-dead'],
+        uncertain: counts.uncertain,
+        likelyAlive: counts['likely-alive'],
+        falsePositives: counts['false-positive'],
+        duration: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+      };
+
       res.write(`data: ${JSON.stringify({
         type: 'complete',
-        aiSummary: qualified.aiSummary
+        aiSummary
       })}\n\n`);
     } catch (error) {
+      console.error('[AI Stream] Error:', error);
       res.write(`data: ${JSON.stringify({ type: 'error', message: error.message })}\n\n`);
     }
 
