@@ -93,29 +93,47 @@ EOF
   echo -e "${GREEN}✓ PATH configured${NC}"
 }
 
+wait_for_engine() {
+  # Wait for API to be ready (max 30 seconds)
+  for i in {1..30}; do
+    if curl -s http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 install_ai_engine() {
   echo -e "${BLUE}Installing Swynx Engine...${NC}"
 
   # Install engine runtime if missing
   if ! command -v ollama &> /dev/null; then
-    curl -fsSL https://ollama.com/install.sh | sh > /dev/null 2>&1
+    echo "Installing runtime..."
+    curl -fsSL https://ollama.com/install.sh 2>/dev/null | sh > /dev/null 2>&1
   fi
 
-  # Start engine if not running
-  if ! pgrep -x "ollama" > /dev/null 2>&1; then
-    ollama serve > /dev/null 2>&1 &
+  # Wait for engine API to be available
+  echo "Starting engine..."
+  if ! wait_for_engine; then
+    # Try starting manually if systemd didn't work
+    nohup ollama serve > /dev/null 2>&1 &
     sleep 3
+    if ! wait_for_engine; then
+      echo -e "${RED}✗ Engine failed to start${NC}"
+      return 1
+    fi
   fi
 
   # Download AI model
   echo "Downloading model (~1.8GB)..."
-  ollama pull "$AI_MODEL" 2>&1 | grep -E "pulling|success" || true
+  ollama pull "$AI_MODEL"
 
   # Verify
   if ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
     echo -e "${GREEN}✓ Swynx Engine ready${NC}"
   else
-    echo -e "${YELLOW}⚠ Engine download in progress - will complete in background${NC}"
+    echo -e "${YELLOW}⚠ Engine setup incomplete - run 'ollama pull ${AI_MODEL}' manually${NC}"
   fi
 }
 
