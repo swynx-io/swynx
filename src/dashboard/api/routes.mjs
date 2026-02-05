@@ -514,7 +514,39 @@ export async function createRoutes() {
         return res.status(400).json({ success: false, error: 'projectPath is required' });
       }
 
-      const result = await scanProject(projectPath, config || {});
+      const scanResult = await scanProject(projectPath, config || {});
+
+      // Transform Swynx scanner output to storage format
+      const result = {
+        id: Date.now().toString(),
+        projectPath,
+        projectName: projectPath.split('/').pop(),
+        scannedAt: new Date().toISOString(),
+        duration: 0,
+        healthScore: { score: Math.round(100 - parseFloat(scanResult.summary?.deadRate || '0')) },
+        summary: {
+          wastePercent: parseFloat(scanResult.summary?.deadRate || '0'),
+          wasteSizeBytes: scanResult.summary?.totalDeadBytes || 0,
+          totalSizeBytes: scanResult.summary?.totalBytes || 0,
+          totalFiles: scanResult.summary?.totalFiles || 0,
+          deadFiles: scanResult.deadFiles?.length || 0,
+          entryPoints: scanResult.summary?.entryPoints || 0,
+          reachableFiles: scanResult.summary?.reachableFiles || 0
+        },
+        deadCode: {
+          files: (scanResult.deadFiles || []).map(f => ({
+            path: f.file,
+            size: f.size,
+            lines: f.lines,
+            language: f.language,
+            exports: (f.exports || []).map(e => e.name || e)
+          }))
+        },
+        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 } },
+        outdated: { packages: [] },
+        emissions: { monthly: { kgCO2: 0 } }
+      };
+
       await saveScan(result);
 
       res.json({ success: true, scan: result });
@@ -673,11 +705,43 @@ export async function createRoutes() {
     try {
       // Run the scan with progress callback and performance settings
       const workers = getSetting('performance.workers', 0) || undefined;
-      const result = await scanProject(projectPath, { onProgress, workers });
+      const scanResult = await scanProject(projectPath, { onProgress, workers });
+
+      // Transform Swynx scanner output to storage format
+      const result = {
+        id: Date.now().toString(),
+        projectPath,
+        projectName: projectPath.split('/').pop(),
+        scannedAt: new Date().toISOString(),
+        duration: 0,
+        healthScore: { score: Math.round(100 - parseFloat(scanResult.summary?.deadRate || '0')) },
+        summary: {
+          wastePercent: parseFloat(scanResult.summary?.deadRate || '0'),
+          wasteSizeBytes: scanResult.summary?.totalDeadBytes || 0,
+          totalSizeBytes: scanResult.summary?.totalBytes || 0,
+          totalFiles: scanResult.summary?.totalFiles || 0,
+          deadFiles: scanResult.deadFiles?.length || 0,
+          entryPoints: scanResult.summary?.entryPoints || 0,
+          reachableFiles: scanResult.summary?.reachableFiles || 0
+        },
+        deadCode: {
+          files: (scanResult.deadFiles || []).map(f => ({
+            path: f.file,
+            size: f.size,
+            lines: f.lines,
+            language: f.language,
+            exports: (f.exports || []).map(e => e.name || e)
+          }))
+        },
+        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 } },
+        outdated: { packages: [] },
+        emissions: { monthly: { kgCO2: 0 } }
+      };
+
       await saveScan(result);
 
       // Pre-warm AI model in background after scan (so it's ready for qualification)
-      import('../../../../swynx/src/ai/ollama.mjs')
+      import('../../ai/ollama.mjs')
         .then(({ warmModel }) => warmModel())
         .catch(() => {});
 
@@ -689,10 +753,11 @@ export async function createRoutes() {
       })}\n\n`);
 
     } catch (error) {
+      console.error('Scan error:', error);
       // Send error event
       res.write(`data: ${JSON.stringify({
         type: 'error',
-        error: error.message,
+        error: error.message || 'Unknown scan error',
         timestamp: Date.now()
       })}\n\n`);
     } finally {
