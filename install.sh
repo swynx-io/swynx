@@ -196,7 +196,12 @@ start_dashboard() {
 }
 
 print_success() {
-  LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+  # Get local IP (macOS and Linux compatible)
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
+  else
+    LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+  fi
 
   echo ""
   echo -e "${GREEN}════════════════════════════════════════════${NC}"
