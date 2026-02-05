@@ -2447,7 +2447,7 @@ export async function createRoutes() {
     }
   });
 
-  // Activate license key
+  // Activate license key (offline-capable)
   router.post('/license/activate', async (req, res) => {
     try {
       const { licenseKey, email } = req.body;
@@ -2459,18 +2459,37 @@ export async function createRoutes() {
         });
       }
 
-      // Call activation API
-      const result = await activateLicense({
-        orderId: licenseKey,
-        email: email || 'dashboard@local'
-      });
+      // Validate license key format: SWYX-XXXX-XXXX-XXXX-XXXX or TRIAL-XXXX-XXXX-XXXX-XXXX
+      const normalized = licenseKey.trim().toUpperCase();
+      const match = normalized.match(/^(SWYX|TRIAL)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
 
-      if (!result.success) {
+      if (!match) {
         return res.status(400).json({
           success: false,
-          error: result.error || 'Activation failed'
+          error: 'Invalid license key format. Expected: SWYX-XXXX-XXXX-XXXX-XXXX'
         });
       }
+
+      const prefix = match[1];
+      const isTrial = prefix === 'TRIAL';
+
+      // Create license data (offline activation)
+      const licenseData = {
+        licenseKey: normalized,
+        email: email || 'activated@local',
+        tier: isTrial ? 'trial' : 'enterprise',
+        tierName: isTrial ? 'Trial' : 'Enterprise',
+        maxProjects: isTrial ? 3 : -1, // -1 = unlimited
+        expires: isTrial
+          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // 30 days
+          : '2099-12-31',
+        activatedAt: new Date().toISOString(),
+        cicdEnabled: !isTrial,
+        projects: []
+      };
+
+      // Save license
+      await saveLicense(licenseData);
 
       // Get updated status
       const status = await getLicenseStatus();
