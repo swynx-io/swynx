@@ -78,14 +78,27 @@ exec node "$INSTALL_DIR/bin/swynx" "\$@"
 EOF
   chmod +x "$WRAPPER_DIR/swynx"
 
-  # Check if PATH includes wrapper dir
+  # Auto-add to PATH if not already there
   if [[ ":$PATH:" != *":$WRAPPER_DIR:"* ]]; then
-    echo ""
-    echo -e "${YELLOW}Add this to your shell profile (~/.bashrc or ~/.zshrc):${NC}"
-    echo ""
-    echo -e "  ${CYAN}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
-    echo ""
-    echo "Then restart your terminal or run: source ~/.bashrc"
+    SHELL_RC=""
+    if [ -f "$HOME/.zshrc" ]; then
+      SHELL_RC="$HOME/.zshrc"
+    elif [ -f "$HOME/.bashrc" ]; then
+      SHELL_RC="$HOME/.bashrc"
+    fi
+
+    if [ -n "$SHELL_RC" ]; then
+      # Only add if not already in the file
+      if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
+        echo '' >> "$SHELL_RC"
+        echo '# Swynx' >> "$SHELL_RC"
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
+        echo -e "${GREEN}✓ Added to PATH in ${SHELL_RC}${NC}"
+      fi
+    fi
+
+    # Also export for current session
+    export PATH="$WRAPPER_DIR:$PATH"
   fi
 }
 
