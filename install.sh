@@ -102,7 +102,8 @@ print_success() {
   echo ""
   echo "  The AI engine installs automatically on first use."
   echo ""
-  echo -e "  Docs: ${BLUE}https://github.com/swynx-io/swynx${NC}"
+  echo -e "  Dashboard: ${BLUE}https://swynx.io/dashboard${NC}"
+  echo -e "  Docs:      ${BLUE}https://github.com/swynx-io/swynx${NC}"
   echo ""
 }
 
