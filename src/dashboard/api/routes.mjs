@@ -32,6 +32,11 @@ import {
   listRollbackSnapshots
 } from '../../fixer/apply-fix.mjs';
 import {
+  unifiedFix,
+  previewUnifiedFix,
+  rollbackUnifiedFix
+} from '../../fixer/unified-fix.mjs';
+import {
   checkProjectLicense,
   getLicenseStatus
 } from '../../license/index.mjs';
@@ -1044,6 +1049,111 @@ export async function createRoutes() {
       }
 
       const result = await rollbackFix(projectPath, snapshotId || null);
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // === Unified Fix (Enterprise - Clean Up All Waste) ===
+
+  // Preview unified fix (dry run) - shows all waste that would be cleaned
+  router.post('/fix/cleanup/preview', async (req, res) => {
+    try {
+      const { projectPath, fixDeadCode, fixUnusedAssets, fixUnusedDeps, minConfidence } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      // Get latest scan with raw data
+      const scans = await getRecentScans(projectPath, 1, { includeRaw: true });
+      if (scans.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No scan data available. Run a scan first.'
+        });
+      }
+
+      let scanResult;
+      if (typeof scans[0].raw_data === 'string') {
+        scanResult = JSON.parse(scans[0].raw_data);
+      } else {
+        scanResult = scans[0].raw_data || scans[0];
+      }
+
+      const result = await previewUnifiedFix(projectPath, scanResult, {
+        fixDeadCode: fixDeadCode !== false,
+        fixUnusedAssets: fixUnusedAssets !== false,
+        fixUnusedDeps: fixUnusedDeps !== false,
+        minConfidence: minConfidence || 0
+      });
+
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Apply unified fix - clean up all selected waste types
+  router.post('/fix/cleanup/apply', async (req, res) => {
+    try {
+      const { projectPath, fixDeadCode, fixUnusedAssets, fixUnusedDeps, minConfidence, noGitCommit } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      // Get latest scan with raw data
+      const scans = await getRecentScans(projectPath, 1, { includeRaw: true });
+      if (scans.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No scan data available. Run a scan first.'
+        });
+      }
+
+      let scanResult;
+      if (typeof scans[0].raw_data === 'string') {
+        scanResult = JSON.parse(scans[0].raw_data);
+      } else {
+        scanResult = scans[0].raw_data || scans[0];
+      }
+
+      const result = await unifiedFix(projectPath, scanResult, {
+        dryRun: false,
+        fixDeadCode: fixDeadCode !== false,
+        fixUnusedAssets: fixUnusedAssets !== false,
+        fixUnusedDeps: fixUnusedDeps !== false,
+        minConfidence: minConfidence || 0,
+        noGitCommit: noGitCommit || false
+      });
+
+      res.json({ success: true, result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Rollback unified fix
+  router.post('/fix/cleanup/rollback', async (req, res) => {
+    try {
+      const { projectPath, snapshotId } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      const result = await rollbackUnifiedFix(projectPath, snapshotId || null);
       res.json({ success: true, result });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
