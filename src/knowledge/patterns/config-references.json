@@ -1,0 +1,14 @@
+{
+  "id": "config-references",
+  "name": "Config File Reference Patterns",
+  "version": "1.0.0",
+  "patterns": [
+    { "config": "webpack.config.{js,ts}", "fields": ["entry", "resolve.alias"], "action": "mark-as-entry" },
+    { "config": "vite.config.{js,ts,mjs,mts}", "fields": ["resolve.alias.replacement", "build.lib.entry"], "action": "mark-as-entry" },
+    { "config": "rollup.config.{js,ts,mjs}", "fields": ["input"], "action": "mark-as-entry" },
+    { "config": "esbuild config", "fields": ["entryPoints"], "action": "mark-as-entry" },
+    { "config": "jest.config.{js,ts,mjs}", "fields": ["setupFiles", "setupFilesAfterFramework", "transform"], "action": "mark-as-entry" },
+    { "config": "vitest.config.{js,ts,mjs}", "fields": ["setupFiles"], "action": "mark-as-entry" },
+    { "config": "tsconfig.json", "fields": ["compilerOptions.paths"], "action": "alias-resolution" }
+  ]
+}

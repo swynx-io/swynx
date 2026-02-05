@@ -1,0 +1,5 @@
+{
+  "framework": "jakarta",
+  "detection": { "build_files": ["pom.xml with jakarta", "build.gradle with jakarta"] },
+  "entry_annotations": ["Entity", "MappedSuperclass", "Embeddable", "Converter", "Stateless", "Stateful", "MessageDriven", "Path", "Provider", "ApplicationPath", "Named", "Startup", "WebServlet", "WebFilter", "WebListener"]
+}

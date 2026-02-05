@@ -1,0 +1,5 @@
+{
+  "framework": "storybook",
+  "detection": { "dependencies": ["@storybook/react", "@storybook/vue3", "@storybook/angular", "storybook"], "directories": [".storybook"] },
+  "entry_patterns": ["**/*.stories.{js,ts,jsx,tsx,mdx}", "**/*.story.{js,ts,jsx,tsx}"]
+}

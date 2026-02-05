@@ -1,0 +1,6 @@
+{
+  "framework": "flask",
+  "detection": { "dependencies": ["flask", "Flask"] },
+  "entry_patterns": ["app.py", "main.py"],
+  "decorator_indicators": ["app.route", "Blueprint"]
+}

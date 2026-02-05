@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "detection": { "dependencies": ["next"], "files": ["next.config.js", "next.config.mjs", "next.config.ts"] },
+  "entry_patterns": [
+    "pages/**", "src/pages/**", "app/**", "src/app/**",
+    "apps/*/pages/**", "apps/*/src/pages/**", "apps/*/app/**", "apps/*/src/app/**"
+  ],
+  "special_files": ["middleware.{js,ts}", "instrumentation.{js,ts}", "instrumentation-client.{js,ts}"]
+}

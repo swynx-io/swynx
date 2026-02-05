@@ -1,0 +1,6 @@
+{
+  "framework": "fastapi",
+  "detection": { "dependencies": ["fastapi", "FastAPI"] },
+  "entry_patterns": ["main.py", "app.py", "router.py", "routes.py", "endpoints.py", "deps.py", "schemas.py"],
+  "decorator_indicators": ["app.get", "app.post", "router.get", "router.post", "Depends"]
+}

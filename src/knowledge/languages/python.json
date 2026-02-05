@@ -1,0 +1,64 @@
+{
+  "language": "python",
+  "version": "1.0.0",
+  "last_updated": "2026-02-04",
+  "file_extensions": [".py", ".pyi"],
+  "import_resolution": {
+    "strategies": [
+      { "order": 1, "name": "absolute-dot-path", "description": "Convert dots to slashes: users.models -> users/models.py or users/models/__init__.py" },
+      { "order": 2, "name": "progressive-strip", "description": "Strip last component and retry (lib.utils.capitalize -> lib/utils.py)" },
+      { "order": 3, "name": "relative-dots", "description": "Resolve . (current dir), .. (parent), etc. relative imports" },
+      { "order": 4, "name": "submodule-check", "description": "For 'from pkg import X', also try pkg/X.py (X could be submodule, not symbol)" }
+    ]
+  },
+  "entry_point_patterns": [
+    { "pattern": "manage.py", "reason": "Django management script" },
+    { "pattern": "wsgi.py", "reason": "WSGI entry point" },
+    { "pattern": "asgi.py", "reason": "ASGI entry point" },
+    { "pattern": "__init__.py", "reason": "Package init file" },
+    { "pattern": "__main__.py", "reason": "Package main entry" },
+    { "pattern": "main.py", "reason": "Application entry point" },
+    { "pattern": "app.py", "reason": "Application entry point" },
+    { "pattern": "conftest.py", "reason": "Pytest configuration" },
+    { "pattern": "test_*.py", "reason": "Pytest test file" },
+    { "pattern": "*_test.py", "reason": "Pytest test file" },
+    { "pattern": "tests.py", "reason": "Django test file" },
+    { "pattern": "settings.py", "reason": "Django settings" },
+    { "pattern": "urls.py", "reason": "Django URL configuration" },
+    { "pattern": "admin.py", "reason": "Django admin configuration" },
+    { "pattern": "models.py", "reason": "Django ORM models" },
+    { "pattern": "views.py", "reason": "Django views" },
+    { "pattern": "serializers.py", "reason": "DRF serializers" },
+    { "pattern": "signals.py", "reason": "Django signals" },
+    { "pattern": "apps.py", "reason": "Django AppConfig" },
+    { "pattern": "tasks.py", "reason": "Celery tasks" },
+    { "pattern": "celery.py", "reason": "Celery application" },
+    { "pattern": "config.py", "reason": "Configuration module" },
+    { "pattern": "router.py", "reason": "FastAPI router" },
+    { "pattern": "routes.py", "reason": "Route definitions" },
+    { "pattern": "endpoints.py", "reason": "API endpoints" },
+    { "pattern": "deps.py", "reason": "FastAPI dependencies" },
+    { "pattern": "schemas.py", "reason": "Pydantic schemas" }
+  ],
+  "framework_detection": {
+    "django": { "indicators": ["django in requirements", "INSTALLED_APPS in settings", "manage.py exists"] },
+    "fastapi": { "indicators": ["fastapi in requirements", "@app.get/@router.get decorators"] },
+    "flask": { "indicators": ["flask in requirements", "@app.route decorators"] },
+    "celery": { "indicators": ["celery in requirements", "@task/@shared_task decorators"] }
+  },
+  "metadata_flags": {
+    "hasMainBlock": "Detects if __name__ == '__main__' block",
+    "isDjangoModel": "Class inherits from Model or models.Model",
+    "isDjangoView": "Class inherits from View/APIView/ViewSet",
+    "isFastAPI": "Has app./router. decorators",
+    "isFlask": "Has route/Blueprint decorators",
+    "isCelery": "Has @task/@shared_task decorators"
+  },
+  "dynamic_loading_patterns": [
+    { "pattern": "**/management/commands/*.py", "reason": "Django management commands loaded by name" },
+    { "pattern": "**/templatetags/*.py", "reason": "Django template tags loaded via {% load %}" },
+    { "pattern": "**/locale/*/formats.py", "reason": "Django locale formats loaded via import_module()" },
+    { "pattern": "**/backends/*.py", "reason": "Django backends loaded via settings" },
+    { "pattern": "**/context_processors.py", "reason": "Django template context processors" }
+  ]
+}

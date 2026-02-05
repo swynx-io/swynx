@@ -1,0 +1,16 @@
+{
+  "id": "dynamic-loading",
+  "name": "Dynamic Loading Patterns",
+  "version": "1.0.0",
+  "patterns": [
+    { "id": "require-resolve", "name": "require.resolve()", "languages": ["javascript"], "description": "Node.js require.resolve() returns path without importing - resolved file is referenced", "action": "mark-as-imported" },
+    { "id": "dynamic-import", "name": "Dynamic import()", "languages": ["javascript", "typescript"], "description": "import() expressions load modules at runtime", "action": "mark-as-imported" },
+    { "id": "glob-sync", "name": "glob.sync() / globSync()", "languages": ["javascript"], "description": "Glob patterns that match files at build time", "action": "mark-matched-files" },
+    { "id": "import-meta-glob", "name": "import.meta.glob()", "languages": ["javascript"], "description": "Vite's compile-time glob import", "action": "mark-matched-files" },
+    { "id": "require-context", "name": "require.context()", "languages": ["javascript"], "description": "Webpack's directory-based module loading", "action": "mark-directory-files" },
+    { "id": "readdir-loader", "name": "readdirSync auto-loader", "languages": ["javascript"], "description": "Index files that use readdirSync(__dirname) to load all siblings", "action": "mark-sibling-files", "detection": "Only check index.{js,ts} files for readdirSync/requireDirectory patterns" },
+    { "id": "python-import-module", "name": "importlib.import_module()", "languages": ["python"], "description": "Python dynamic module loading", "action": "mark-as-imported" },
+    { "id": "java-reflection", "name": "Class.forName()", "languages": ["java"], "description": "Java reflection-based class loading", "action": "mark-as-imported" },
+    { "id": "java-spi", "name": "ServiceLoader", "languages": ["java"], "description": "Java SPI service loading from META-INF/services", "action": "mark-spi-files" }
+  ]
+}

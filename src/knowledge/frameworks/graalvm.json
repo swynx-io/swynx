@@ -1,0 +1,6 @@
+{
+  "framework": "graalvm",
+  "detection": { "build_files": ["native-image config", "reflect-config.json"] },
+  "entry_annotations": ["TargetClass", "Substitute"],
+  "entry_patterns": ["*Substitution*.java", "*Substitution*.kt"]
+}

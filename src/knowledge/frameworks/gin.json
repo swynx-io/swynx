@@ -1,0 +1,5 @@
+{
+  "framework": "gin",
+  "detection": { "go_imports": ["github.com/gin-gonic/gin"] },
+  "entry_patterns": ["main.go", "cmd/*/main.go"]
+}

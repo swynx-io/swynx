@@ -1,0 +1,6 @@
+{
+  "framework": "angular",
+  "detection": { "dependencies": ["@angular/core"] },
+  "di_decorators": ["Injectable", "Component", "Directive", "Pipe", "NgModule"],
+  "special_injectable": { "providedIn": ["root", "any", "platform"], "note": "Auto-registered singletons" }
+}

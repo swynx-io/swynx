@@ -1,0 +1,43 @@
+{
+  "language": "go",
+  "version": "1.0.0",
+  "last_updated": "2026-02-04",
+  "file_extensions": [".go"],
+  "import_resolution": {
+    "strategies": [
+      { "order": 1, "name": "module-path-aware", "description": "Strip go.mod module path prefix to get local package directory (most precise)", "accuracy": "highest" },
+      { "order": 2, "name": "directory-segment-match", "description": "Try matching import path segments as directory paths from the end", "accuracy": "medium" },
+      { "order": 3, "name": "last-segment-fallback", "description": "Match by last path segment as package name (least precise)", "accuracy": "low" }
+    ]
+  },
+  "same_package_linking": {
+    "enabled": true,
+    "reason": "Go compiles all .go files in the same directory as one package",
+    "implementation": "When any Go file in a directory is reachable, all non-test files in the same directory are reachable",
+    "exclude_patterns": ["dead*.go", "deprecated*.go", "legacy*.go", "old*.go", "unused*.go"],
+    "exclude_test_files": true
+  },
+  "entry_point_patterns": [
+    { "pattern": "main.go", "reason": "Go application entry point (in package main)" },
+    { "pattern": "*_test.go", "reason": "Go test file" },
+    { "pattern": "wire.go", "reason": "Wire DI code generation" },
+    { "pattern": "wire_gen.go", "reason": "Wire generated DI code" },
+    { "pattern": "doc.go", "reason": "Package documentation (always compiled)" },
+    { "pattern": "*_generated.go", "reason": "Generated code" },
+    { "pattern": "*_gen.go", "reason": "Generated code" },
+    { "pattern": "plugin.go", "reason": "Plugin entry point" }
+  ],
+  "special_functions": {
+    "init": { "is_entry": true, "reason": "Go init() functions run automatically on package import" },
+    "main": { "is_entry": true, "condition": "Only in package main", "reason": "Application entry point" }
+  },
+  "di_frameworks": {
+    "wire": { "patterns": ["wire.Build", "wire.NewSet", "wire.Struct", "wire.Bind"] },
+    "fx": { "patterns": ["fx.New", "fx.Provide", "fx.Invoke"] },
+    "dig": { "patterns": ["dig.New", "container.Provide"] }
+  },
+  "module_detection": {
+    "file": "go.mod",
+    "module_path_extraction": "First line: module github.com/org/repo"
+  }
+}

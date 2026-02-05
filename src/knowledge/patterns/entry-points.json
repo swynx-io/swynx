@@ -1,0 +1,270 @@
+{
+  "id": "entry-points",
+  "name": "Universal Entry Point Patterns",
+  "version": "1.1.0",
+  "patterns": {
+    "package_json_fields": ["main", "module", "source", "exports", "bin", "browser"],
+    "html_script_tags": { "description": "script[src] tags in HTML files reference JS entry points" },
+    "npm_scripts": { "description": "File paths referenced in package.json scripts" },
+    "vite_replacements": { "description": "resolve.alias replacement paths in vite.config" },
+    "config_entries": { "description": "Entry points defined in webpack, rollup, esbuild configs" },
+    "monorepo_package_mains": { "description": "main/module/exports fields of workspace packages that are depended upon" },
+    "monorepo_package_exports": {
+      "description": "ALL subpath exports from workspace package.json exports field, not just the '.' entry. Each export key maps to a file that is a published API surface.",
+      "example": { ".": "./src/index.ts", "./errors": "./src/errors/index.ts" }
+    },
+    "di_container_references": {
+      "description": "Classes referenced via DI container methods (Container.get, Injector.resolve, etc.) are loaded at runtime",
+      "detect_patterns": [
+        "Container.get(ClassName)",
+        "Injector.resolve(ClassName)",
+        "container.get(ClassName)",
+        "injector.resolve(ClassName)"
+      ]
+    }
+  },
+  "file_patterns": [
+    {
+      "id": "worker-files",
+      "name": "Worker thread entry points",
+      "pattern": ".*[-.]worker\\.[mc]?[jt]sx?$",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Worker files are loaded dynamically by worker_threads or web workers",
+      "discovered": { "date": "2026-02-04", "repo": "n8n" }
+    },
+    {
+      "id": "enterprise-handlers",
+      "name": "Enterprise handler/service files",
+      "pattern": "\\.(handler|service|controller)\\.ee\\.[mc]?[jt]sx?$",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Enterprise edition files with .ee. suffix are dynamically loaded based on license",
+      "discovered": { "date": "2026-02-04", "repo": "n8n" }
+    },
+    {
+      "id": "scanner-directory",
+      "name": "Scanner/CLI utility directories",
+      "pattern": "/scanner/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Scanner directories contain CLI utilities often loaded as package bin entries"
+    },
+    {
+      "id": "error-class-files",
+      "name": "Error class files in errors directories",
+      "pattern": "/errors/.*\\.error\\.[mc]?[jt]sx?$",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Error classes in errors/ directories are often auto-exported or dynamically loaded"
+    },
+    {
+      "id": "grammar-term-files",
+      "name": "Grammar/parser term files",
+      "pattern": "\\.terms\\.[mc]?[jt]sx?$",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Grammar term files (CodeMirror, PEG.js, etc.) are generated and loaded by parser systems"
+    },
+    {
+      "id": "config-directories",
+      "name": "Config directories",
+      "pattern": "/configs?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Files in config/configs directories are loaded dynamically by configuration systems"
+    },
+    {
+      "id": "experiment-directories",
+      "name": "Experiment/A-B test directories",
+      "pattern": "/experiments?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Experiment directories contain A/B test variants loaded dynamically at runtime"
+    },
+    {
+      "id": "mixin-directories",
+      "name": "Vue/framework mixin directories",
+      "pattern": "/mixins?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Mixin directories contain mixins imported dynamically or via plugin systems"
+    },
+    {
+      "id": "benchmark-directories",
+      "name": "Benchmark directories",
+      "pattern": "/bench(marks?)?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Benchmark directories contain standalone performance tests"
+    },
+    {
+      "id": "workflow-directories",
+      "name": "Workflow definition directories",
+      "pattern": "/workflows/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Workflow directories contain workflow definitions loaded dynamically at runtime"
+    },
+    {
+      "id": "playground-directories",
+      "name": "Playground directories",
+      "pattern": "(^|/)playground/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Playground directories contain standalone demo/test apps loaded independently"
+    },
+    {
+      "id": "docs-source-directories",
+      "name": "Documentation source directories",
+      "pattern": "(^|/)docs_src/",
+      "type": "entry-point",
+      "languages": ["python"],
+      "reason": "Documentation source directories (docs_src/) contain runnable code examples"
+    },
+    {
+      "id": "theme-override-directories",
+      "name": "Theme override directories",
+      "pattern": "/theme/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Theme directories contain framework theme overrides loaded by convention (e.g., Docusaurus swizzle)"
+    },
+    {
+      "id": "integration-test-directories",
+      "name": "Integration test directories",
+      "pattern": "(^|/)integration-tests?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Integration test directories contain standalone test suites run separately from unit tests"
+    },
+    {
+      "id": "website-content-directories",
+      "name": "Website content directories",
+      "pattern": "(^|/)website/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Website directories contain documentation site source loaded by static site generators"
+    },
+    {
+      "id": "type-stub-files",
+      "name": "Python type stub files",
+      "pattern": "\\.pyi$",
+      "type": "entry-point",
+      "languages": ["python"],
+      "reason": "Type stub files (.pyi) are loaded by type checkers at runtime, not imported"
+    },
+    {
+      "id": "typeshed-directories",
+      "name": "Typeshed directories",
+      "pattern": "(^|/)typeshed/",
+      "type": "entry-point",
+      "languages": ["python"],
+      "reason": "Typeshed directories contain bundled type stubs loaded by type checkers"
+    },
+    {
+      "id": "e2e-directories",
+      "name": "E2E test directories",
+      "pattern": "(^|/)e2e/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "E2E test directories contain standalone test applications and fixtures"
+    },
+    {
+      "id": "generated-files",
+      "name": "Generated code files",
+      "pattern": "\\.gen\\.[mc]?[jt]sx?$",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Generated files (*.gen.ts) are created by code generators and loaded at runtime"
+    },
+    {
+      "id": "generated-directories",
+      "name": "Generated code directories",
+      "pattern": "[-_]generated/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript", "python"],
+      "reason": "Directories with -generated or _generated suffix contain auto-generated code"
+    },
+    {
+      "id": "sandbox-directories",
+      "name": "Sandbox/demo directories",
+      "pattern": "(^|/)sandbox/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Sandbox directories contain standalone demo apps for testing"
+    },
+    {
+      "id": "classic-legacy-modules",
+      "name": "Classic/legacy compatibility modules",
+      "pattern": "[-_](classic|compat|legacy)/",
+      "type": "entry-point",
+      "languages": ["python", "javascript", "typescript"],
+      "reason": "Classic/compat/legacy modules are dynamically re-exported for backwards compatibility"
+    },
+    {
+      "id": "lib-build-output",
+      "name": "Library build output directories",
+      "pattern": "(^|/)lib/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "lib/ directories contain compiled/built output consumed by package consumers"
+    },
+    {
+      "id": "demo-directories",
+      "name": "Demo/example directories",
+      "pattern": "(^|/)demo/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Demo directories contain example code loaded by documentation systems"
+    },
+    {
+      "id": "deprecated-directories",
+      "name": "Deprecated code directories",
+      "pattern": "(^|/)deprecated/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Deprecated directories contain old code kept for reference or migration"
+    },
+    {
+      "id": "system-tests-directories",
+      "name": "System test directories",
+      "pattern": "(^|/)system-tests?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "System test directories contain test fixtures and integration test projects"
+    },
+    {
+      "id": "docs-data-directories",
+      "name": "Documentation data directories",
+      "pattern": "(^|/)docs/(data|examples)/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Documentation data directories contain example code loaded dynamically by doc sites"
+    },
+    {
+      "id": "project-fixtures",
+      "name": "Project fixture directories",
+      "pattern": "(^|/)project-fixtures?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Project fixture directories contain test project templates"
+    },
+    {
+      "id": "snapshot-directories",
+      "name": "Test snapshot directories",
+      "pattern": "(^|/)__snapshots__/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Snapshot directories contain test snapshot files loaded by test runners"
+    },
+    {
+      "id": "starters-directories",
+      "name": "Starter template directories",
+      "pattern": "(^|/)starters?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Starter directories contain project templates copied when creating new projects"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "framework": "ember",
+  "detection": {
+    "dependencies": ["ember-source", "ember-cli"],
+    "files": ["ember-cli-build.js", ".ember-cli", "ui/ember-cli-build.js", "ui/.ember-cli"]
+  },
+  "entry_patterns": [
+    "**/app/components/**",
+    "**/app/services/**",
+    "**/app/routes/**",
+    "**/app/controllers/**",
+    "**/app/models/**",
+    "**/app/adapters/**",
+    "**/app/serializers/**",
+    "**/app/helpers/**",
+    "**/app/initializers/**",
+    "**/app/instance-initializers/**",
+    "**/app/modifiers/**",
+    "**/app/transforms/**",
+    "**/app/utils/**",
+    "**/addon/components/**",
+    "**/addon/services/**",
+    "**/addon/helpers/**",
+    "**/addon/modifiers/**",
+    "**/addon/utils/**"
+  ]
+}

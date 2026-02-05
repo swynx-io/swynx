@@ -1,0 +1,6 @@
+{
+  "framework": "celery",
+  "detection": { "dependencies": ["celery"] },
+  "entry_patterns": ["tasks.py", "celery.py", "celeryconfig.py"],
+  "decorator_indicators": ["task", "shared_task", "celery.task"]
+}

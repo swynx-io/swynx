@@ -1,0 +1,7 @@
+{
+  "framework": "nestjs",
+  "detection": { "dependencies": ["@nestjs/core", "@nestjs/common"] },
+  "entry_patterns": ["**/*.controller.{ts,js}", "**/*.handler.{ts,js}"],
+  "di_decorators": ["Controller", "Module", "Injectable", "Service", "Resolver", "Get", "Post", "Put", "Delete", "Patch", "Options", "Head", "All"],
+  "container_patterns": ["moduleRef.get"]
+}

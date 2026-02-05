@@ -1,0 +1,78 @@
+{
+  "language": "javascript",
+  "version": "1.0.0",
+  "last_updated": "2026-02-04",
+  "file_extensions": [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts"],
+  "related_extensions": [".vue", ".svelte"],
+  "import_resolution": {
+    "strategies": [
+      { "order": 1, "name": "relative-path", "description": "Resolve ./foo and ../foo relative to importing file" },
+      { "order": 2, "name": "path-alias", "description": "Resolve @/foo via tsconfig paths, vite aliases, webpack aliases" },
+      { "order": 3, "name": "workspace-package", "description": "Resolve @scope/pkg to local workspace package entry point" },
+      { "order": 4, "name": "baseurl-resolve", "description": "Resolve bare imports via tsconfig baseUrl" },
+      { "order": 5, "name": "extension-resolve", "description": "Try .ts, .tsx, .js, .jsx, .mjs, .mts extensions" },
+      { "order": 6, "name": "index-resolve", "description": "Try /index.ts, /index.js for directory imports" },
+      { "order": 7, "name": "platform-suffix", "description": "Try .ios, .android, .web, .native suffixes (React Native)" }
+    ]
+  },
+  "monorepo_detection": {
+    "workspace_configs": [
+      { "file": "package.json", "field": "workspaces", "type": "npm/yarn" },
+      { "file": "pnpm-workspace.yaml", "field": "packages", "type": "pnpm" },
+      { "file": "lerna.json", "field": "packages", "type": "lerna" },
+      { "file": "nx.json", "dirs": ["apps", "libs", "packages", "tools", "services"], "type": "nx" },
+      { "file": "rush.json", "field": "projects[].projectFolder", "type": "rush" },
+      { "file": "turbo.json", "type": "turborepo", "note": "Uses package.json workspaces" }
+    ],
+    "common_dirs": ["packages", "libs", "apps", "modules", "services", "tools", "plugins", "extensions"]
+  },
+  "path_alias_sources": [
+    { "file": "tsconfig.json", "field": "compilerOptions.paths", "supports_extends": true },
+    { "file": "tsconfig.base.json", "field": "compilerOptions.paths", "note": "Nx workspace aliases" },
+    { "file": "tsconfig.app.json", "field": "compilerOptions.paths" },
+    { "file": "jsconfig.json", "field": "compilerOptions.paths" },
+    { "file": "vite.config.ts", "field": "resolve.alias", "detection": "regex" },
+    { "file": "vite.config.js", "field": "resolve.alias", "detection": "regex" }
+  ],
+  "special_aliases": {
+    "@site/": { "framework": "docusaurus", "detected_by": "docusaurus.config.{js,ts,mjs}", "maps_to": "project root" }
+  },
+  "entry_point_patterns": {
+    "file_based_routing": [
+      "pages/**", "src/pages/**", "app/**", "src/app/**", "routes/**", "src/routes/**"
+    ],
+    "config_files": [
+      "*.config.{js,ts,mjs,cjs}", "*.rc.{js,mjs,cjs}", ".*.rc.{js,mjs}"
+    ],
+    "test_files": [
+      "**/*.test.{js,ts,jsx,tsx}", "**/*.spec.{js,ts,jsx,tsx}", "**/__tests__/**",
+      "**/__mocks__/**", "**/fixtures/**", "**/__fixtures__/**"
+    ],
+    "type_declarations": ["**/*.d.ts"],
+    "build_outputs": ["dist/**", "build/**", "out/**"],
+    "dynamic_loading": [
+      "workers/**", "**/*.worker.{js,ts}", "plugins/**", "extensions/**",
+      "migrations/**", "seeds/**"
+    ],
+    "named_patterns": [
+      "index.{js,ts,mjs,tsx,jsx}", "main.{js,ts,mjs,tsx,jsx}",
+      "server.{js,ts,mjs}", "app.{js,ts,mjs,tsx,jsx}"
+    ]
+  },
+  "dynamic_import_patterns": [
+    { "type": "require", "pattern": "require('...')" },
+    { "type": "require-resolve", "pattern": "require.resolve('...')", "marks_as_referenced": true },
+    { "type": "dynamic-import", "pattern": "import('...')" },
+    { "type": "glob-sync", "pattern": "glob.sync('...')", "marks_directory": true },
+    { "type": "import-meta-glob", "pattern": "import.meta.glob('...')", "framework": "vite" },
+    { "type": "require-context", "pattern": "require.context('./', true, /regex/)", "framework": "webpack" }
+  ],
+  "barrel_file_handling": {
+    "description": "Follow export * from and export { x } from chains to find referenced files",
+    "re_export_types": ["export-all", "named-reexport"]
+  },
+  "validation_results": {
+    "react": { "repo": "facebook/react", "files": 3897, "rate": "< 3%", "date": "2026-02-04" },
+    "cal.com": { "repo": "calcom/cal.com", "files": 8000, "rate": "< 5%", "date": "2026-02-04" }
+  }
+}

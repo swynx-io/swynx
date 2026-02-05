@@ -1,0 +1,7 @@
+{
+  "framework": "react",
+  "detection": { "dependencies": ["react", "react-dom"] },
+  "entry_patterns": [],
+  "related_frameworks": ["react-router", "redux", "@reduxjs/toolkit"],
+  "notes": "React itself doesn't have convention-based entry points. File-based routing comes from Next.js, Remix, etc."
+}

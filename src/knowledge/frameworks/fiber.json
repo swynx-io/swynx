@@ -1,0 +1,5 @@
+{
+  "framework": "fiber",
+  "detection": { "go_imports": ["github.com/gofiber/fiber"] },
+  "entry_patterns": ["main.go", "cmd/*/main.go"]
+}

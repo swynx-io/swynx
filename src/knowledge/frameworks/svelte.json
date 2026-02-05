@@ -1,0 +1,6 @@
+{
+  "framework": "svelte",
+  "detection": { "dependencies": ["svelte", "@sveltejs/kit"] },
+  "entry_patterns": ["src/routes/**"],
+  "file_extensions": [".svelte"]
+}

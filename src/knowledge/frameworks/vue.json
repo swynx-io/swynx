@@ -1,0 +1,9 @@
+{
+  "framework": "vue",
+  "detection": { "dependencies": ["vue", "vue-router"] },
+  "entry_patterns": ["**/router.{js,ts}", "**/init.{js,ts}"],
+  "related_frameworks": ["pinia", "vuex"],
+  "store_patterns": { "pinia": ["**/*.store.{js,ts}", "**/use*Store.{js,ts}"], "vuex": ["**/stores/**"] },
+  "composable_patterns": ["**/composables/**"],
+  "sfc_support": { "extension": ".vue", "script_extraction": "Extract <script> or <script setup> block" }
+}

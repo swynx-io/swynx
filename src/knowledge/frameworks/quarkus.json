@@ -1,0 +1,6 @@
+{
+  "framework": "quarkus",
+  "detection": { "build_files": ["pom.xml with quarkus", "build.gradle with quarkus"] },
+  "entry_annotations": ["QuarkusMain", "ApplicationScoped", "RequestScoped", "SessionScoped", "Dependent", "Singleton", "BuildStep", "BuildSteps", "Recorder", "QuarkusTest", "QuarkusIntegrationTest"],
+  "validation": { "repo": "quarkusio/quarkus", "rate": "5.90%", "progression": "100% -> 5.90%" }
+}

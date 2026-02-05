@@ -1,0 +1,123 @@
+{
+  "language": "java",
+  "version": "1.0.0",
+  "last_updated": "2026-02-04",
+  "file_extensions": [".java"],
+  "related_extensions": [".kt", ".kts"],
+  "source_roots": {
+    "patterns": ["src/main/java/", "src/test/java/", "src/main/kotlin/", "src/test/kotlin/", "src/main/groovy/"],
+    "detection": "Scan file paths for these patterns to auto-detect source roots at any depth"
+  },
+  "import_resolution": {
+    "strategies": [
+      { "order": 1, "name": "fqn-map-lookup", "description": "Direct fully-qualified-name to file path lookup via parser-extracted package names", "accuracy": "highest", "note": "Runs BEFORE framework filter - critical for self-scanning repos like spring-boot" },
+      { "order": 2, "name": "wildcard-expansion", "description": "Expand import com.example.* to all files in package directory", "accuracy": "high" },
+      { "order": 3, "name": "static-import-strip", "description": "Strip method/field name from static imports to find containing class (e.g., com.example.Utils.method -> com.example.Utils)", "accuracy": "high" },
+      { "order": 4, "name": "framework-filter", "description": "Skip known external frameworks (java.*, javax.*, org.springframework.*, etc.) but ONLY after fqn-map and wildcard checks", "accuracy": "medium", "critical_note": "Must run AFTER fqn-map lookup because in framework repos (spring-boot, quarkus) internal imports look like framework imports" },
+      { "order": 5, "name": "source-root-path", "description": "Convert dots to slashes and find under detected source roots", "accuracy": "medium" },
+      { "order": 6, "name": "classname-fallback", "description": "Match by class name when package doesn't resolve (exclude dead/deprecated patterns)", "accuracy": "low" }
+    ]
+  },
+  "same_package_linking": {
+    "enabled": true,
+    "reason": "Java classes in the same package can reference each other without explicit imports",
+    "implementation": "When a Java file is marked reachable, mark all files in the same package as reachable",
+    "exclude_patterns": ["Dead*.java", "Deprecated*.java", "Legacy*.java", "Old*.java", "Unused*.java", "**/deprecated/**", "**/legacy/**"],
+    "discovered": { "date": "2026-02-04", "repo": "quarkus", "context": "Without same-package linking, Quarkus showed 12.54% dead. With it, correctly linked." }
+  },
+  "entry_point_annotations": {
+    "spring": [
+      { "name": "SpringBootApplication", "reason": "Main application entry point" },
+      { "name": "Component", "reason": "Spring DI component scanning" },
+      { "name": "Service", "reason": "Spring DI service layer" },
+      { "name": "Repository", "reason": "Spring DI data layer" },
+      { "name": "Controller", "reason": "Spring MVC controller" },
+      { "name": "RestController", "reason": "Spring REST controller" },
+      { "name": "Configuration", "reason": "Spring configuration class" },
+      { "name": "Bean", "reason": "Spring bean factory method" },
+      { "name": "Aspect", "reason": "Spring AOP aspect" },
+      { "name": "ControllerAdvice", "reason": "Spring exception handler" },
+      { "name": "RestControllerAdvice", "reason": "Spring REST exception handler" },
+      { "name": "EventListener", "reason": "Spring event listener" },
+      { "name": "EnableAutoConfiguration", "reason": "Spring auto-config" },
+      { "name": "Import", "reason": "Spring class import" },
+      { "name": "ComponentScan", "reason": "Spring component scanning" }
+    ],
+    "quarkus": [
+      { "name": "QuarkusMain", "reason": "Quarkus application entry point" },
+      { "name": "ApplicationScoped", "reason": "CDI application-scoped bean" },
+      { "name": "RequestScoped", "reason": "CDI request-scoped bean" },
+      { "name": "SessionScoped", "reason": "CDI session-scoped bean" },
+      { "name": "Dependent", "reason": "CDI dependent-scoped bean" },
+      { "name": "Singleton", "reason": "CDI singleton bean" },
+      { "name": "BuildStep", "reason": "Quarkus build-time processor", "discovered_impact": "Reduced Quarkus from 15.83% to 12.54%" },
+      { "name": "BuildSteps", "reason": "Quarkus build-time processor container" },
+      { "name": "Recorder", "reason": "Quarkus bytecode recorder for runtime init" }
+    ],
+    "jakarta": [
+      { "name": "Entity", "reason": "JPA entity" },
+      { "name": "MappedSuperclass", "reason": "JPA mapped superclass" },
+      { "name": "Embeddable", "reason": "JPA embeddable" },
+      { "name": "Converter", "reason": "JPA attribute converter" },
+      { "name": "Stateless", "reason": "EJB stateless session bean" },
+      { "name": "Stateful", "reason": "EJB stateful session bean" },
+      { "name": "MessageDriven", "reason": "EJB message-driven bean" },
+      { "name": "Path", "reason": "JAX-RS resource path" },
+      { "name": "Provider", "reason": "JAX-RS provider" },
+      { "name": "ApplicationPath", "reason": "JAX-RS application path" },
+      { "name": "Named", "reason": "CDI named bean" },
+      { "name": "Startup", "reason": "CDI startup bean" },
+      { "name": "WebServlet", "reason": "Servlet annotation" },
+      { "name": "WebFilter", "reason": "Servlet filter annotation" },
+      { "name": "WebListener", "reason": "Servlet listener annotation" }
+    ],
+    "graalvm": [
+      { "name": "TargetClass", "reason": "GraalVM native-image substitution target" },
+      { "name": "Substitute", "reason": "GraalVM native-image substitution method" }
+    ],
+    "testing": [
+      { "name": "Test", "reason": "JUnit test method" },
+      { "name": "ParameterizedTest", "reason": "JUnit parameterized test" },
+      { "name": "TestMethodOrder", "reason": "JUnit test ordering" },
+      { "name": "TestInstance", "reason": "JUnit test instance" },
+      { "name": "ExtendWith", "reason": "JUnit extension" },
+      { "name": "SpringBootTest", "reason": "Spring Boot integration test" },
+      { "name": "WebMvcTest", "reason": "Spring MVC test" },
+      { "name": "DataJpaTest", "reason": "Spring JPA test" },
+      { "name": "QuarkusTest", "reason": "Quarkus test" },
+      { "name": "QuarkusIntegrationTest", "reason": "Quarkus integration test" }
+    ]
+  },
+  "entry_point_patterns": [
+    { "pattern": "*Application.java", "reason": "Spring Boot application class" },
+    { "pattern": "*Test.java", "reason": "Unit test" },
+    { "pattern": "*Tests.java", "reason": "Unit tests" },
+    { "pattern": "*Spec.java", "reason": "Test specification" },
+    { "pattern": "*IT.java", "reason": "Integration test" },
+    { "pattern": "*ITCase.java", "reason": "Integration test case" },
+    { "pattern": "package-info.java", "reason": "Package documentation" },
+    { "pattern": "**/META-INF/services/*", "reason": "Java SPI service loader" },
+    { "pattern": "**/META-INF/*.xml", "reason": "Java resource config" },
+    { "pattern": "*Substitution*.java", "reason": "GraalVM native-image substitution" }
+  ],
+  "framework_filter": {
+    "description": "Skip these package prefixes as external dependencies (but only AFTER checking local FQN map)",
+    "prefixes": [
+      "java.", "javax.", "jakarta.",
+      "org.springframework.", "org.spring.",
+      "io.quarkus.", "io.smallrye.",
+      "org.hibernate.", "org.apache.",
+      "com.google.", "com.fasterxml.",
+      "org.junit.", "org.mockito.",
+      "org.slf4j.", "org.apache.logging.",
+      "org.eclipse.", "org.reactivestreams.",
+      "io.vertx.", "io.netty.",
+      "org.jboss.", "kotlin.", "android."
+    ],
+    "note": "When scanning Spring Boot itself, org.springframework.* imports ARE local and must resolve via FQN map BEFORE this filter"
+  },
+  "validation_results": {
+    "spring_boot": { "repo": "spring-projects/spring-boot", "files": 13466, "dead": 93, "rate": "0.69%", "progression": "100% -> 0.69%", "date": "2026-02-04" },
+    "quarkus": { "repo": "quarkusio/quarkus", "files": 35491, "dead": 2094, "rate": "5.90%", "progression": "100% -> 5.90%", "date": "2026-02-04" }
+  }
+}

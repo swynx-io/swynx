@@ -1,0 +1,6 @@
+{
+  "framework": "spring",
+  "detection": { "build_files": ["pom.xml with spring-boot", "build.gradle with spring-boot"] },
+  "entry_annotations": ["SpringBootApplication", "Component", "Service", "Repository", "Controller", "RestController", "Configuration", "Bean", "Aspect", "ControllerAdvice", "RestControllerAdvice", "EnableAutoConfiguration", "Import", "ComponentScan", "RequestMapping", "GetMapping", "PostMapping", "PutMapping", "DeleteMapping", "PatchMapping"],
+  "entry_patterns": ["*Application.java", "*Application.kt"]
+}

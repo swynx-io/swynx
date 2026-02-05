@@ -1,0 +1,5 @@
+{
+  "framework": "express",
+  "detection": { "dependencies": ["express"] },
+  "entry_patterns": ["**/routers/**", "**/routes/**", "**/middleware/**"]
+}

@@ -1,0 +1,10 @@
+{
+  "framework": "django",
+  "detection": { "dependencies": ["django", "Django"], "files": ["manage.py", "settings.py"] },
+  "entry_patterns": [
+    "manage.py", "wsgi.py", "asgi.py", "settings.py", "urls.py",
+    "admin.py", "models.py", "views.py", "serializers.py", "signals.py", "apps.py",
+    "**/management/commands/*.py", "**/templatetags/*.py"
+  ],
+  "convention_files": { "models.py": "ORM models", "views.py": "URL handlers", "admin.py": "Admin interface", "urls.py": "URL routing" }
+}
