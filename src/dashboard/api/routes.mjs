@@ -1016,6 +1016,86 @@ export async function createRoutes() {
     }
   });
 
+  // Quarantine unused assets from a scan
+  router.post('/quarantine/unused-assets', async (req, res) => {
+    try {
+      const { projectPath, scanId } = req.body;
+
+      if (!projectPath) {
+        return res.status(400).json({
+          success: false,
+          error: 'projectPath is required'
+        });
+      }
+
+      // Get scan data (specific scanId or latest)
+      let scan;
+      if (scanId) {
+        scan = await getScanById(scanId);
+      } else {
+        const scans = await getRecentScans(projectPath, 1, { includeRaw: true });
+        scan = scans.length > 0 ? scans[0] : null;
+      }
+
+      if (!scan) {
+        return res.status(404).json({
+          success: false,
+          error: 'No scan found for this project'
+        });
+      }
+
+      // Extract unused assets from scan data
+      const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
+      const unusedAssets = scanData.details?.unusedAssets || [];
+
+      if (unusedAssets.length === 0) {
+        return res.json({
+          success: true,
+          sessionId: null,
+          filesQuarantined: 0,
+          totalSize: 0,
+          message: 'No unused assets to quarantine'
+        });
+      }
+
+      // Create quarantine session
+      const { sessionId } = createSession(projectPath, 'unused-assets-quarantine');
+
+      // Quarantine each unused asset
+      let filesQuarantined = 0;
+      let totalSize = 0;
+      const errors = [];
+
+      for (const asset of unusedAssets) {
+        try {
+          const filePath = join(projectPath, asset.relativePath || asset.file);
+          if (existsSync(filePath)) {
+            const stat = statSync(filePath);
+            quarantineFile(projectPath, sessionId, filePath);
+            filesQuarantined++;
+            totalSize += stat.size;
+          }
+        } catch (err) {
+          errors.push({ file: asset.relativePath || asset.file, error: err.message });
+        }
+      }
+
+      res.json({
+        success: true,
+        sessionId,
+        filesQuarantined,
+        totalSize,
+        totalSizeFormatted: totalSize > 1024 * 1024
+          ? `${(totalSize / (1024 * 1024)).toFixed(1)} MB`
+          : `${(totalSize / 1024).toFixed(1)} KB`,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `Quarantined ${filesQuarantined} unused asset(s) — ${totalSize > 1024 * 1024 ? (totalSize / (1024 * 1024)).toFixed(1) + ' MB' : (totalSize / 1024).toFixed(1) + ' KB'} saved`
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // === Dead Code Fix (--fix functionality) ===
 
   // Preview dead code fix (dry run)
