@@ -677,3 +677,4 @@ function extractViteReplacementEntryPoints(dir, prefix = '') {
 }
 
 export default { scan };
+export { scan as scanProject } from "./index.mjs";

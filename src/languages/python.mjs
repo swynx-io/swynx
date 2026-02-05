@@ -1,6 +1,6 @@
 // src/languages/python.mjs
 // Python parser with Django, FastAPI, Flask, Celery support
-// Extracted from peer-audit/src/scanner/parsers/python.mjs
+// Extracted from swynx/src/scanner/parsers/python.mjs
 
 let languagePatterns = null;
 

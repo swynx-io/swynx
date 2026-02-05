@@ -1,6 +1,6 @@
 // src/languages/go.mjs
 // Go parser with Wire, Fx, Dig DI framework support
-// Extracted from peer-audit/src/scanner/parsers/go.mjs
+// Extracted from swynx/src/scanner/parsers/go.mjs
 
 let languagePatterns = null;
 

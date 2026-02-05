@@ -1,7 +1,7 @@
 // src/scanner/resolver.mjs
 // Import resolution coordinator
 // This is the core of dead code detection - resolving import paths to actual files
-// Extracted from the 820-line buildReachableFiles in peer-audit/deadcode.mjs
+// Extracted from the 820-line buildReachableFiles in swynx/deadcode.mjs
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, dirname, basename, normalize, relative } from 'path';

@@ -1,6 +1,6 @@
 // src/languages/java.mjs
 // Java/Kotlin parser with Spring, Quarkus, Jakarta annotation support
-// Extracted from peer-audit/src/scanner/parsers/java.mjs
+// Extracted from swynx/src/scanner/parsers/java.mjs
 // Represents 15+ hours of validated detection logic
 
 let languagePatterns = null;

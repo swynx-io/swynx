@@ -1,6 +1,6 @@
 // src/scanner/graph.mjs
 // Dependency graph builder and reachability analysis
-// Core algorithm extracted from peer-audit's buildReachableFiles (820 lines)
+// Core algorithm extracted from swynx's buildReachableFiles (820 lines)
 
 import { readFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
