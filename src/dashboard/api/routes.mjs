@@ -2956,7 +2956,7 @@ export async function createRoutes() {
   // Get engine status
   router.get('/ai/status', async (req, res) => {
     try {
-      const { getEngineStatus } = await import('../../../../swynx/src/ai/engine.mjs');
+      const { getEngineStatus } = await import('../../ai/engine.mjs');
       const status = await getEngineStatus();
       res.json({ success: true, ...status });
     } catch (error) {
@@ -2990,7 +2990,7 @@ export async function createRoutes() {
     res.setHeader('Connection', 'keep-alive');
 
     try {
-      const { ensureEngine } = await import('../../../../swynx/src/ai/engine.mjs');
+      const { ensureEngine } = await import('../../ai/engine.mjs');
 
       const result = await ensureEngine(({ stage, message, progress }) => {
         res.write(`data: ${JSON.stringify({ stage, message, progress })}\n\n`);
@@ -3057,8 +3057,9 @@ export async function createRoutes() {
       }
 
       const { ensureEngine } = await import('../../ai/engine.mjs');
-      const { qualifyFile } = await import('../../ai/qualifier.mjs');
+      const { qualifyFilesBatch } = await import('../../ai/qualifier.mjs');
       const { warmModel } = await import('../../ai/ollama.mjs');
+      const BATCH_SIZE = 5;
 
       // Ensure engine is ready first
       res.write(`data: ${JSON.stringify({ type: 'status', message: 'Checking Swynx Engine...' })}\n\n`);
@@ -3092,41 +3093,54 @@ export async function createRoutes() {
       const startTime = Date.now();
       const counts = { 'confirmed-dead': 0, 'likely-dead': 0, uncertain: 0, 'likely-alive': 0, 'false-positive': 0 };
 
-      // Qualify files one at a time with progress updates
-      for (let i = 0; i < total; i++) {
-        const file = filesToQualify[i];
-        const progress = Math.round(((i + 1) / total) * 100);
+      // Qualify files in batches for speed
+      let processed = 0;
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = filesToQualify.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(total / BATCH_SIZE);
 
         res.write(`data: ${JSON.stringify({
           type: 'progress',
-          current: i + 1,
+          current: processed,
           total,
-          progress,
-          message: `Qualifying ${file.path}...`
+          progress: Math.round((processed / total) * 100),
+          message: `Batch ${batchNum}/${totalBatches}: Qualifying ${batch.length} files...`
         })}\n\n`);
 
         try {
-          const qual = await qualifyFile(file, { projectPath });
-          file.aiQualification = qual;
+          const results = await qualifyFilesBatch(batch, { projectPath });
 
-          if (qual.category && counts[qual.category] !== undefined) {
-            counts[qual.category]++;
+          for (let j = 0; j < batch.length; j++) {
+            const file = batch[j];
+            const qual = results[j] || { error: 'No result from batch' };
+            file.aiQualification = qual;
+            processed++;
+
+            if (qual.category && counts[qual.category] !== undefined) {
+              counts[qual.category]++;
+            }
+
+            const progress = Math.round((processed / total) * 100);
+            res.write(`data: ${JSON.stringify({
+              type: 'file',
+              path: file.path,
+              qualification: qual,
+              progress
+            })}\n\n`);
           }
-
-          res.write(`data: ${JSON.stringify({
-            type: 'file',
-            path: file.path,
-            qualification: qual,
-            progress
-          })}\n\n`);
         } catch (err) {
-          file.aiQualification = { error: err.message };
-          res.write(`data: ${JSON.stringify({
-            type: 'file',
-            path: file.path,
-            qualification: { error: err.message },
-            progress
-          })}\n\n`);
+          // Batch failed - mark all files in batch as errored
+          for (const file of batch) {
+            file.aiQualification = { error: err.message };
+            processed++;
+            res.write(`data: ${JSON.stringify({
+              type: 'file',
+              path: file.path,
+              qualification: { error: err.message },
+              progress: Math.round((processed / total) * 100)
+            })}\n\n`);
+          }
         }
       }
 
