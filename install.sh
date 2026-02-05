@@ -14,6 +14,7 @@ NC='\033[0m'
 
 REPO="swynx-io/swynx"
 INSTALL_DIR="${SWYNX_INSTALL_DIR:-$HOME/.swynx}"
+AI_MODEL="qwen2.5-coder:3b"
 
 print_banner() {
   echo ""
@@ -44,7 +45,7 @@ check_node() {
     exit 1
   fi
 
-  echo -e "${GREEN}✓ Node.js $(node -v) detected${NC}"
+  echo -e "${GREEN}✓ Node.js $(node -v)${NC}"
 }
 
 install_swynx() {
@@ -54,56 +55,77 @@ install_swynx() {
   rm -rf "$INSTALL_DIR"
 
   # Clone repository
-  echo "Cloning from GitHub..."
   git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null
 
   # Install dependencies
-  echo "Installing dependencies..."
   cd "$INSTALL_DIR"
   npm install --production --silent
 
-  echo -e "${GREEN}✓ Swynx installed to ${INSTALL_DIR}${NC}"
+  echo -e "${GREEN}✓ Swynx installed${NC}"
 }
 
 setup_path() {
-  BIN_PATH="$INSTALL_DIR/bin"
-
-  # Create wrapper script in a standard location
   WRAPPER_DIR="$HOME/.local/bin"
   mkdir -p "$WRAPPER_DIR"
 
+  # Create wrapper script
   cat > "$WRAPPER_DIR/swynx" << EOF
 #!/bin/bash
 exec node "$INSTALL_DIR/bin/swynx" "\$@"
 EOF
   chmod +x "$WRAPPER_DIR/swynx"
 
-  # Auto-add to PATH if not already there
-  if [[ ":$PATH:" != *":$WRAPPER_DIR:"* ]]; then
-    SHELL_RC=""
-    if [ -f "$HOME/.zshrc" ]; then
-      SHELL_RC="$HOME/.zshrc"
-    elif [ -f "$HOME/.bashrc" ]; then
-      SHELL_RC="$HOME/.bashrc"
-    fi
+  # Add to PATH in both .bashrc and .zshrc
+  PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
 
-    if [ -n "$SHELL_RC" ]; then
-      # Only add if not already in the file
-      if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
-        echo '' >> "$SHELL_RC"
-        echo '# Swynx' >> "$SHELL_RC"
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$SHELL_RC"
-        echo -e "${GREEN}✓ Added to PATH in ${SHELL_RC}${NC}"
+  for RC_FILE in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    if [ -f "$RC_FILE" ]; then
+      if ! grep -q '.local/bin' "$RC_FILE" 2>/dev/null; then
+        echo '' >> "$RC_FILE"
+        echo '# Swynx' >> "$RC_FILE"
+        echo "$PATH_LINE" >> "$RC_FILE"
       fi
     fi
+  done
 
-    # Also export for current session
-    export PATH="$WRAPPER_DIR:$PATH"
+  # Export for current session
+  export PATH="$WRAPPER_DIR:$PATH"
+  echo -e "${GREEN}✓ PATH configured${NC}"
+}
+
+install_ai_engine() {
+  echo -e "${BLUE}Installing Swynx Engine (AI)...${NC}"
+
+  # Check if Ollama is installed
+  if ! command -v ollama &> /dev/null; then
+    echo "Installing Ollama..."
+    curl -fsSL https://ollama.com/install.sh | sh
+    echo -e "${GREEN}✓ Ollama installed${NC}"
+  else
+    echo -e "${GREEN}✓ Ollama already installed${NC}"
+  fi
+
+  # Start Ollama service if not running
+  if ! pgrep -x "ollama" > /dev/null 2>&1; then
+    echo "Starting Ollama service..."
+    ollama serve > /dev/null 2>&1 &
+    sleep 3
+  fi
+
+  # Pull the AI model
+  echo "Pulling AI model (${AI_MODEL})..."
+  echo "This may take a few minutes on first install (~1.8GB)..."
+  ollama pull "$AI_MODEL"
+
+  # Verify model is available
+  if ollama list | grep -q "qwen2.5-coder"; then
+    echo -e "${GREEN}✓ Swynx Engine ready${NC}"
+  else
+    echo -e "${YELLOW}Warning: Model pull may still be in progress${NC}"
   fi
 }
 
 print_success() {
-  # Get local IP
   LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
   echo ""
@@ -111,12 +133,10 @@ print_success() {
   echo -e "${GREEN}  Swynx installed successfully!${NC}"
   echo -e "${GREEN}════════════════════════════════════════════${NC}"
   echo ""
-  echo "  Quick start:"
+  echo "  Run your first scan:"
   echo ""
-  echo -e "    ${CYAN}swynx scan .${NC}              # Scan current directory"
-  echo -e "    ${CYAN}swynx scan . --qualify${NC}   # With AI qualification"
-  echo ""
-  echo "  The AI engine installs automatically on first use."
+  echo -e "    ${CYAN}swynx scan .${NC}              # Basic scan"
+  echo -e "    ${CYAN}swynx scan . --qualify${NC}   # With AI analysis"
   echo ""
   echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:9000${NC}"
   echo -e "  Docs:      ${BLUE}https://github.com/swynx-io/swynx${NC}"
@@ -128,4 +148,5 @@ print_banner
 check_node
 install_swynx
 setup_path
+install_ai_engine
 print_success
