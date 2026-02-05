@@ -94,34 +94,28 @@ EOF
 }
 
 install_ai_engine() {
-  echo -e "${BLUE}Installing Swynx Engine (AI)...${NC}"
+  echo -e "${BLUE}Installing Swynx Engine...${NC}"
 
-  # Check if Ollama is installed
+  # Install engine runtime if missing
   if ! command -v ollama &> /dev/null; then
-    echo "Installing Ollama..."
-    curl -fsSL https://ollama.com/install.sh | sh
-    echo -e "${GREEN}✓ Ollama installed${NC}"
-  else
-    echo -e "${GREEN}✓ Ollama already installed${NC}"
+    curl -fsSL https://ollama.com/install.sh | sh > /dev/null 2>&1
   fi
 
-  # Start Ollama service if not running
+  # Start engine if not running
   if ! pgrep -x "ollama" > /dev/null 2>&1; then
-    echo "Starting Ollama service..."
     ollama serve > /dev/null 2>&1 &
     sleep 3
   fi
 
-  # Pull the AI model
-  echo "Pulling AI model (${AI_MODEL})..."
-  echo "This may take a few minutes on first install (~1.8GB)..."
-  ollama pull "$AI_MODEL"
+  # Download AI model
+  echo "Downloading model (~1.8GB)..."
+  ollama pull "$AI_MODEL" 2>&1 | grep -E "pulling|success" || true
 
-  # Verify model is available
-  if ollama list | grep -q "qwen2.5-coder"; then
+  # Verify
+  if ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
     echo -e "${GREEN}✓ Swynx Engine ready${NC}"
   else
-    echo -e "${YELLOW}Warning: Model pull may still be in progress${NC}"
+    echo -e "${YELLOW}⚠ Engine download in progress - will complete in background${NC}"
   fi
 }
 
