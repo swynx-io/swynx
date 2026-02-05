@@ -82,9 +82,13 @@ const ENTRY_POINT_PATTERNS = [
   // Internal runtime/cache directories (build system files)
   /\/cache-dir\//, /\/internal-plugins\//,
   // Frontend static/app directories (webpack/vite entry points)
-  /\/static\/app\//, /\/static\/gs/,
+  /\/static\/app\//, /^static\/app\//, /\/static\/gs/, /^static\/gs/,
   // Ember.js frontend directories (convention-based loading)
   /frontend\/[^/]+\/app\//, /frontend\/discourse/,
+  // Server-side rendering builds (conditional exports)
+  /\/server\//, /^server\//,
+  // Native bindings (compiled, not imported)
+  /\/bindings\//, /^bindings\//,
   // Generated/vendored code patterns
   /\/@generated\//, /\/_generated\//, /\/generated\//,
   // Examples, samples, debug, and documentation
@@ -184,7 +188,9 @@ const ENTRY_POINT_PATTERNS = [
   // Haskell entry points
   /\.cabal$/, /stack\.yaml$/, /Setup\.hs$/,
   // Nim entry points
-  /\.nimble$/
+  /\.nimble$/,
+  // Zig entry points (build.zig compiles these, not imported by JS)
+  /build\.zig$/, /\.zig$/
 ];
 
 /**
@@ -1181,6 +1187,7 @@ function extractComposerEntryPoints(projectPath) {
  */
 function extractNestedPackageEntryPoints(projectPath, parsedFiles) {
   const entries = [];
+  const addedPaths = new Set();
 
   // Find all package.json files by checking all ancestor directories of parsed files
   const checkedDirs = new Set();
@@ -1197,28 +1204,37 @@ function extractNestedPackageEntryPoints(projectPath, parsedFiles) {
 
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        const mainField = pkg.main || '';
+        const mainField = pkg.main || pkg.module || '';
 
-        // Check if main points to compiled output (out/, dist/, build/)
+        // Check if main/module points to compiled output (out/, dist/, build/)
         if (/^\.?\/?(?:out|dist|build)\//.test(mainField)) {
           // Map to source: out/main -> src/main.ts
           let sourcePath = mainField
             .replace(/^\.?\/?(?:out|dist|build)\//, 'src/')
-            .replace(/\.js$/, '');
+            .replace(/\.(c|m)?js$/, '');
 
           // Try to find matching source file with various extensions
           const candidates = [
+            // Try exact filename match
             `${dir}/${sourcePath}.ts`,
             `${dir}/${sourcePath}.tsx`,
             `${dir}/${sourcePath}.mts`,
             `${dir}/${sourcePath}.js`,
             `${dir}/${sourcePath}.mjs`,
+            // Also try src/index.ts (common pattern for sub-packages)
+            `${dir}/src/index.ts`,
+            `${dir}/src/index.tsx`,
+            `${dir}/src/index.mts`,
+            `${dir}/src/index.js`,
+            `${dir}/src/index.mjs`,
           ];
 
           for (const candidate of candidates) {
+            if (addedPaths.has(candidate)) continue;
             const found = parsedFiles.find(f => f.relativePath === candidate);
             if (found) {
               entries.push({ file: candidate, reason: `Nested package entry: ${dir}` });
+              addedPaths.add(candidate);
               break;
             }
           }
