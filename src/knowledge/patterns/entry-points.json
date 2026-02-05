@@ -181,10 +181,10 @@
     {
       "id": "generated-directories",
       "name": "Generated code directories",
-      "pattern": "[-_]generated/",
+      "pattern": "(^|/)generated/|[-_]generated/",
       "type": "entry-point",
-      "languages": ["javascript", "typescript", "python"],
-      "reason": "Directories with -generated or _generated suffix contain auto-generated code"
+      "languages": ["javascript", "typescript", "python", "go", "java"],
+      "reason": "Generated directories contain auto-generated code loaded at runtime"
     },
     {
       "id": "sandbox-directories",
@@ -265,6 +265,126 @@
       "type": "entry-point",
       "languages": ["javascript", "typescript"],
       "reason": "Starter directories contain project templates copied when creating new projects"
+    },
+    {
+      "id": "boilerplate-directories",
+      "name": "Boilerplate directories",
+      "pattern": "(^|/)boilerplates?/|[-_]boilerplates?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Boilerplate directories contain template code for new projects"
+    },
+    {
+      "id": "solutions-directories",
+      "name": "Solution example directories",
+      "pattern": "(^|/)solutions?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Solutions directories contain standalone example implementations"
+    },
+    {
+      "id": "guides-directories",
+      "name": "Guide example directories",
+      "pattern": "(^|/)guides?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Guides directories contain tutorial and guide example code"
+    },
+    {
+      "id": "chromatic-directories",
+      "name": "Chromatic visual test directories",
+      "pattern": "(^|/)chromatic/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Chromatic directories contain visual testing stories loaded dynamically"
+    },
+    {
+      "id": "icons-directories",
+      "name": "Icon component directories",
+      "pattern": "(^|/)[-_]?icons/|icons?/src/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Icon directories contain icon components exported as bundles"
+    },
+    {
+      "id": "illustrations-directories",
+      "name": "Illustration component directories",
+      "pattern": "(^|/)illustrations?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Illustration directories contain illustration components exported as bundles"
+    },
+    {
+      "id": "resources-directories",
+      "name": "Test resource directories",
+      "pattern": "(^|/)resources/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript", "python", "go", "java"],
+      "reason": "Resources directories contain test fixtures and data files loaded at runtime"
+    },
+    {
+      "id": "interactions-directories",
+      "name": "Interaction plugin directories",
+      "pattern": "(^|/)interactions/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Interaction directories contain plugin modules loaded dynamically"
+    },
+    {
+      "id": "shapes-directories",
+      "name": "Shape plugin directories",
+      "pattern": "(^|/)shapes/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Shape directories contain shape plugin modules"
+    },
+    {
+      "id": "updaters-directories",
+      "name": "Updater plugin directories",
+      "pattern": "(^|/)updaters/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Updater directories contain update plugin modules"
+    },
+    {
+      "id": "effects-directories",
+      "name": "Effect plugin directories",
+      "pattern": "(^|/)effects/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Effect directories contain effect plugin modules"
+    },
+    {
+      "id": "utils-directories",
+      "name": "Utility directories",
+      "pattern": "(^|/)utils/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Utils directories contain utility modules often dynamically imported"
+    },
+    {
+      "id": "mode-directories",
+      "name": "Editor mode directories",
+      "pattern": "(^|/)modes?/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Mode directories contain editor language modes loaded by name"
+    },
+    {
+      "id": "snippets-directories",
+      "name": "Snippet directories",
+      "pattern": "(^|/)snippets/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Snippet directories contain code snippets loaded dynamically"
+    },
+    {
+      "id": "ext-directories",
+      "name": "Extension directories",
+      "pattern": "(^|/)ext/",
+      "type": "entry-point",
+      "languages": ["javascript", "typescript"],
+      "reason": "Extension directories contain editor extensions loaded by name"
     }
   ]
 }

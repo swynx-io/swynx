@@ -45,8 +45,8 @@ const ENTRY_POINT_PATTERNS = [
   /playwright\.config\.[mc]?[jt]s$/,
   /global-setup\.[mc]?[jt]s$/, /global-teardown\.[mc]?[jt]s$/,
   /\/reporters\//, /test-utils\//,
-  // Plugins, extensions & dynamic loading conventions
-  /\/plugins?\//, /\/extensions?\//,
+  // Plugins, extensions, addons & dynamic loading conventions
+  /\/plugins?\//, /^plugins?\//, /\/extensions?\//, /^extensions?\//, /\/addons?\//, /^addons?\//,
   /\.plugin\.([mc]?[jt]s|tsx)$/, /\.node\.([mc]?[jt]s|tsx)$/,
   /\.credentials\.([mc]?[jt]s|tsx)$/,
   /\.connector\.([mc]?[jt]s|tsx)$/, /\.adapter\.([mc]?[jt]s|tsx)$/,
