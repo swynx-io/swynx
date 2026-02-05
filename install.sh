@@ -113,38 +113,61 @@ wait_for_engine() {
   return 1
 }
 
+spinner() {
+  local pid=$1
+  local delay=0.2
+  local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local i=0
+  local elapsed=0
+  while ps -p $pid > /dev/null 2>&1; do
+    local char="${spinstr:$i:1}"
+    printf "\r  ${CYAN}%s${NC} Warming AI (${elapsed}s)... first run takes 1-2 min on CPU" "$char"
+    i=$(( (i + 1) % ${#spinstr} ))
+    elapsed=$((elapsed + 1))
+    sleep 1
+  done
+  printf "\r\033[K"
+}
+
 install_ai_engine() {
   echo -e "${BLUE}Installing Swynx Engine...${NC}"
 
   # Install engine runtime if missing
   if ! command -v ollama &> /dev/null; then
-    echo "Installing runtime..."
+    echo "  Installing runtime..."
     curl -fsSL https://ollama.com/install.sh 2>/dev/null | sh > /dev/null 2>&1
   fi
 
   # Wait for engine API to be available
-  echo "Starting engine..."
+  echo "  Starting engine..."
   if ! wait_for_engine; then
     # Try starting manually if systemd didn't work
     nohup ollama serve > /dev/null 2>&1 &
     sleep 3
     if ! wait_for_engine; then
-      echo -e "${RED}✗ Engine failed to start${NC}"
-      return 1
+      echo -e "${YELLOW}⚠ Engine not ready - AI will warm on first use${NC}"
+      return 0
     fi
   fi
 
   # Download AI model if not present
   if ! ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
-    echo "Downloading model (~1.8GB)..."
+    echo "  Downloading model (~1.8GB)..."
     ollama pull "$AI_MODEL"
   fi
 
-  # Pre-warm the model
-  echo "Warming up AI..."
-  curl -s http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1
+  # Pre-warm the model with progress indicator (max 120s)
+  echo ""
+  (timeout 120 curl -s http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1) &
+  local warm_pid=$!
+  spinner $warm_pid
+  wait $warm_pid 2>/dev/null
 
-  echo -e "${GREEN}✓ Swynx Engine ready${NC}"
+  if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✓ Swynx Engine ready${NC}"
+  else
+    echo -e "${YELLOW}⚠ AI warming in background - will be ready shortly${NC}"
+  fi
 }
 
 start_dashboard() {
