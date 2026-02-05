@@ -1,0 +1,421 @@
+{
+  "lastUpdated": "2026-01-27",
+  "licenses": {
+    "MIT": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "ISC": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "Apache-2.0": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "APACHE2.0": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "BSD-2-Clause": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "BSD2CLAUSE": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "BSD-3-Clause": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "BSD3CLAUSE": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "0BSD": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": false,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "CC0-1.0": {
+      "category": "public-domain",
+      "risk": "low",
+      "requiresAttribution": false,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "CC-BY-3.0": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "CC-BY-4.0": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "Unlicense": {
+      "category": "public-domain",
+      "risk": "low",
+      "requiresAttribution": false,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "WTFPL": {
+      "category": "public-domain",
+      "risk": "low",
+      "requiresAttribution": false,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "Zlib": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "BlueOak-1.0.0": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "Python-2.0": {
+      "category": "permissive",
+      "risk": "low",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": null
+    },
+    "GPL-2.0": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL2.0": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL-2.0-only": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL-2.0-or-later": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL-3.0": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL3.0": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL-3.0-only": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "GPL-3.0-or-later": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "GPL requires derivative works to be open source"
+    },
+    "AGPL-3.0": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "AGPL requires source disclosure even for network use"
+    },
+    "AGPL3.0": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "AGPL requires source disclosure even for network use"
+    },
+    "AGPL-3.0-only": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "AGPL requires source disclosure even for network use"
+    },
+    "AGPL-3.0-or-later": {
+      "category": "copyleft",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "AGPL requires source disclosure even for network use"
+    },
+    "LGPL-2.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "LGPL-2.1": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "LGPL2.1": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "LGPL-3.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "LGPL3.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "LGPL-3.0-only": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "LGPL-3.0-or-later": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "LGPL allows linking but modifications must be shared"
+    },
+    "MPL-2.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "MPL requires sharing modifications to licensed files"
+    },
+    "MPL2.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "MPL requires sharing modifications to licensed files"
+    },
+    "EPL-1.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "EPL requires sharing modifications"
+    },
+    "EPL-2.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "EPL requires sharing modifications"
+    },
+    "CDDL-1.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "CDDL requires sharing modifications to licensed files"
+    },
+    "CDDL-1.1": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "CDDL requires sharing modifications to licensed files"
+    },
+    "UNLICENSED": {
+      "category": "proprietary",
+      "risk": "high",
+      "requiresAttribution": false,
+      "copyleft": false,
+      "commercialUse": false,
+      "warning": "No license - all rights reserved, cannot use legally"
+    },
+    "PROPRIETARY": {
+      "category": "proprietary",
+      "risk": "high",
+      "requiresAttribution": false,
+      "copyleft": false,
+      "commercialUse": false,
+      "warning": "Proprietary license - review terms carefully"
+    },
+    "SEE LICENSE IN LICENSE": {
+      "category": "unknown",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": "Custom license - review manually"
+    },
+    "CC-BY-NC-3.0": {
+      "category": "non-commercial",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": false,
+      "warning": "Non-commercial use only"
+    },
+    "CC-BY-NC-4.0": {
+      "category": "non-commercial",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": false,
+      "warning": "Non-commercial use only"
+    },
+    "CC-BY-NC-SA-3.0": {
+      "category": "non-commercial",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": false,
+      "warning": "Non-commercial use only, share-alike required"
+    },
+    "CC-BY-NC-SA-4.0": {
+      "category": "non-commercial",
+      "risk": "high",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": false,
+      "warning": "Non-commercial use only, share-alike required"
+    },
+    "CC-BY-SA-3.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "Share-alike required for modifications"
+    },
+    "CC-BY-SA-4.0": {
+      "category": "weak-copyleft",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": true,
+      "commercialUse": true,
+      "warning": "Share-alike required for modifications"
+    },
+    "UNKNOWN": {
+      "category": "unknown",
+      "risk": "medium",
+      "requiresAttribution": true,
+      "copyleft": false,
+      "commercialUse": true,
+      "warning": "Unknown license - review manually"
+    }
+  }
+}

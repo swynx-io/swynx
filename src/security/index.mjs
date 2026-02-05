@@ -66,7 +66,7 @@ export function checkTelemetryPackages(projectPath = process.cwd()) {
   };
 
   // Check our own package.json
-  const peerAuditRoot = join(projectPath, 'node_modules', 'swynx');
+  const swynxRoot = join(projectPath, 'node_modules', 'swynx');
   const checkPaths = [
     join(process.cwd(), 'package.json'),
     join(process.cwd(), 'package-lock.json')

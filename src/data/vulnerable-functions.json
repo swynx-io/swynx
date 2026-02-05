@@ -1,0 +1,524 @@
+{
+  "lodash": {
+    "CVE-2021-23337": {
+      "functions": ["template"],
+      "importPatterns": [
+        "_.template(",
+        "lodash.template(",
+        "import { template }",
+        "require('lodash/template')",
+        "require('lodash').template"
+      ],
+      "description": "Command Injection via template function",
+      "attackVector": "User-controlled input passed to template()",
+      "fixedIn": "4.17.21"
+    },
+    "CVE-2020-8203": {
+      "functions": ["zipObjectDeep", "setWith", "set"],
+      "importPatterns": [
+        "_.zipObjectDeep(",
+        "_.setWith(",
+        "_.set(",
+        "lodash.set(",
+        "lodash.setWith(",
+        "import { set",
+        "import { setWith",
+        "import { zipObjectDeep"
+      ],
+      "description": "Prototype Pollution via zipObjectDeep and set functions",
+      "attackVector": "User-controlled keys in object manipulation",
+      "fixedIn": "4.17.19"
+    },
+    "CVE-2019-10744": {
+      "functions": ["defaultsDeep", "merge"],
+      "importPatterns": [
+        "_.defaultsDeep(",
+        "_.merge(",
+        "lodash.merge(",
+        "lodash.defaultsDeep(",
+        "import { merge",
+        "import { defaultsDeep"
+      ],
+      "description": "Prototype Pollution via defaultsDeep and merge",
+      "attackVector": "User-controlled object properties",
+      "fixedIn": "4.17.12"
+    }
+  },
+  "axios": {
+    "CVE-2023-45857": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "CSRF/XSRF token exposure on cross-site requests",
+      "attackVector": "Cross-site requests may expose XSRF tokens to attackers",
+      "note": "All usage potentially affected if making cross-origin requests",
+      "fixedIn": "1.6.0"
+    },
+    "CVE-2024-39338": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Server-Side Request Forgery (SSRF)",
+      "attackVector": "Attacker-controlled URLs can bypass restrictions",
+      "note": "Affected if URLs come from user input",
+      "fixedIn": "1.7.4"
+    }
+  },
+  "jsonwebtoken": {
+    "CVE-2022-23529": {
+      "functions": ["verify"],
+      "importPatterns": [
+        "jwt.verify(",
+        ".verify(",
+        "verify(token",
+        "import { verify }",
+        "require('jsonwebtoken').verify"
+      ],
+      "description": "Insecure key handling allows arbitrary code execution",
+      "attackVector": "Malicious JWTs with crafted secretOrPublicKey objects",
+      "fixedIn": "9.0.0"
+    },
+    "CVE-2022-23540": {
+      "functions": ["verify"],
+      "importPatterns": [
+        "jwt.verify(",
+        ".verify(",
+        "verify(token"
+      ],
+      "description": "Algorithm confusion allows signature bypass",
+      "attackVector": "Tokens signed with asymmetric keys can be forged",
+      "fixedIn": "9.0.0"
+    },
+    "CVE-2022-23541": {
+      "functions": ["verify"],
+      "importPatterns": [
+        "jwt.verify(",
+        ".verify("
+      ],
+      "description": "Key confusion through unvalidated kid header",
+      "attackVector": "Attacker can specify arbitrary key id",
+      "fixedIn": "9.0.0"
+    }
+  },
+  "express": {
+    "CVE-2024-29041": {
+      "functions": ["redirect", "res.redirect"],
+      "importPatterns": [
+        "res.redirect(",
+        ".redirect(",
+        "response.redirect("
+      ],
+      "description": "Open redirect vulnerability in res.redirect",
+      "attackVector": "Malformed URLs can redirect to attacker-controlled sites",
+      "fixedIn": "4.19.2"
+    },
+    "CVE-2024-43796": {
+      "functions": ["res.redirect"],
+      "importPatterns": [
+        "res.redirect(",
+        ".redirect("
+      ],
+      "description": "XSS in redirect URL parsing",
+      "attackVector": "Malicious URLs in redirect can execute JavaScript",
+      "fixedIn": "4.20.0"
+    }
+  },
+  "minimatch": {
+    "CVE-2022-3517": {
+      "functions": ["minimatch", "braceExpand"],
+      "importPatterns": [
+        "minimatch(",
+        "braceExpand(",
+        "require('minimatch')(",
+        "import minimatch"
+      ],
+      "description": "ReDoS (Regular Expression Denial of Service)",
+      "attackVector": "Malicious glob patterns cause CPU exhaustion",
+      "fixedIn": "3.0.5"
+    }
+  },
+  "qs": {
+    "CVE-2022-24999": {
+      "functions": ["parse"],
+      "importPatterns": [
+        "qs.parse(",
+        "require('qs').parse(",
+        ".parse(req.query",
+        ".parse(query"
+      ],
+      "description": "Prototype Pollution via query string parsing",
+      "attackVector": "Crafted query strings pollute Object prototype",
+      "fixedIn": "6.10.3"
+    }
+  },
+  "shell-quote": {
+    "CVE-2021-42740": {
+      "functions": ["parse"],
+      "importPatterns": [
+        "shellQuote.parse(",
+        "parse(",
+        "require('shell-quote').parse(",
+        "import { parse }"
+      ],
+      "description": "Command Injection via argument parsing",
+      "attackVector": "Malicious strings bypass shell escaping",
+      "fixedIn": "1.7.3"
+    }
+  },
+  "node-fetch": {
+    "CVE-2022-0235": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Authorization header leak on redirect",
+      "attackVector": "Auth headers sent to redirect target domain",
+      "note": "All usage affected if following redirects with auth headers",
+      "fixedIn": "2.6.7"
+    }
+  },
+  "moment": {
+    "CVE-2022-24785": {
+      "functions": ["locale", "updateLocale"],
+      "importPatterns": [
+        "moment.locale(",
+        ".locale(",
+        "moment.updateLocale(",
+        ".updateLocale("
+      ],
+      "description": "Path Traversal via locale string",
+      "attackVector": "User-controlled locale strings can traverse filesystem",
+      "note": "Affected if using dynamic locales from user input",
+      "fixedIn": "2.29.4"
+    },
+    "CVE-2022-31129": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "ReDoS in string parsing",
+      "attackVector": "Malicious date strings cause CPU exhaustion",
+      "note": "Affected if parsing user-provided date strings",
+      "fixedIn": "2.29.4"
+    }
+  },
+  "yaml": {
+    "CVE-2023-2251": {
+      "functions": ["parse", "load", "parseDocument"],
+      "importPatterns": [
+        "yaml.parse(",
+        "yaml.load(",
+        "YAML.parse(",
+        "YAML.load(",
+        ".parse(",
+        ".load(",
+        "parseDocument("
+      ],
+      "description": "Code Execution via custom YAML tags",
+      "attackVector": "Parsing untrusted YAML with unsafe schema executes code",
+      "fixedIn": "2.2.2"
+    }
+  },
+  "js-yaml": {
+    "CVE-2023-44270": {
+      "functions": ["load", "safeLoad"],
+      "importPatterns": [
+        "yaml.load(",
+        "jsYaml.load(",
+        ".load(",
+        "safeLoad("
+      ],
+      "description": "Arbitrary code execution with custom tags",
+      "attackVector": "Untrusted YAML with tags can execute functions",
+      "fixedIn": "4.1.0"
+    }
+  },
+  "semver": {
+    "CVE-2022-25883": {
+      "functions": ["Range", "new Range", "satisfies", "valid", "clean"],
+      "importPatterns": [
+        "new Range(",
+        "semver.Range(",
+        "semver.satisfies(",
+        "semver.valid(",
+        "semver.clean(",
+        ".satisfies(",
+        ".valid("
+      ],
+      "description": "ReDoS in version range parsing",
+      "attackVector": "Malicious version strings cause CPU exhaustion",
+      "fixedIn": "7.5.2"
+    }
+  },
+  "json5": {
+    "CVE-2022-46175": {
+      "functions": ["parse"],
+      "importPatterns": [
+        "JSON5.parse(",
+        "json5.parse(",
+        ".parse("
+      ],
+      "description": "Prototype Pollution via __proto__ key",
+      "attackVector": "Crafted JSON5 with __proto__ pollutes prototype",
+      "fixedIn": "2.2.2"
+    }
+  },
+  "tough-cookie": {
+    "CVE-2023-26136": {
+      "functions": ["parse", "Cookie.parse"],
+      "importPatterns": [
+        "Cookie.parse(",
+        "tough.Cookie.parse(",
+        ".parse(cookie"
+      ],
+      "description": "Prototype Pollution via cookie parsing",
+      "attackVector": "Malicious cookie strings pollute Object prototype",
+      "fixedIn": "4.1.3"
+    }
+  },
+  "word-wrap": {
+    "CVE-2023-26115": {
+      "functions": ["wrap"],
+      "importPatterns": [
+        "wrap(",
+        "wordWrap(",
+        "require('word-wrap')("
+      ],
+      "description": "ReDoS in word wrapping",
+      "attackVector": "Long strings with specific patterns cause CPU hang",
+      "fixedIn": "1.2.4"
+    }
+  },
+  "xml2js": {
+    "CVE-2023-0842": {
+      "functions": ["parseString", "parseStringPromise", "Parser"],
+      "importPatterns": [
+        "parseString(",
+        "parseStringPromise(",
+        "new Parser(",
+        "xml2js.parseString("
+      ],
+      "description": "Prototype Pollution via XML parsing",
+      "attackVector": "Malicious XML pollutes Object prototype",
+      "fixedIn": "0.5.0"
+    }
+  },
+  "request": {
+    "CVE-2023-28155": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "SSRF via URL parsing bypass",
+      "attackVector": "Attacker-controlled URLs bypass hostname checks",
+      "note": "Package is deprecated - migrate to alternative",
+      "fixedIn": null,
+      "deprecated": true
+    }
+  },
+  "got": {
+    "CVE-2022-33987": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Open redirect following redirects",
+      "attackVector": "Redirects to attacker-controlled URLs",
+      "fixedIn": "12.1.0"
+    }
+  },
+  "minimist": {
+    "CVE-2021-44906": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Prototype Pollution via argument parsing",
+      "attackVector": "Command-line arguments with __proto__ pollute prototype",
+      "fixedIn": "1.2.6"
+    },
+    "CVE-2020-7598": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Prototype Pollution via argument parsing",
+      "attackVector": "CLI args with constructor.prototype pollute prototype",
+      "fixedIn": "1.2.3"
+    }
+  },
+  "flat": {
+    "CVE-2020-36632": {
+      "functions": ["unflatten"],
+      "importPatterns": [
+        "unflatten(",
+        "flat.unflatten(",
+        ".unflatten("
+      ],
+      "description": "Prototype Pollution via unflatten",
+      "attackVector": "Flattened objects with __proto__ keys pollute prototype",
+      "fixedIn": "5.0.1"
+    }
+  },
+  "passport": {
+    "CVE-2022-25896": {
+      "functions": ["authenticate"],
+      "importPatterns": [
+        "passport.authenticate(",
+        ".authenticate("
+      ],
+      "description": "Session fixation vulnerability",
+      "attackVector": "Session ID not regenerated after login",
+      "fixedIn": "0.6.0"
+    }
+  },
+  "sanitize-html": {
+    "CVE-2024-21501": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "XSS bypass via malformed HTML",
+      "attackVector": "Crafted HTML bypasses sanitization",
+      "fixedIn": "2.12.1"
+    }
+  },
+  "dompurify": {
+    "CVE-2024-45801": {
+      "functions": ["sanitize"],
+      "importPatterns": [
+        "DOMPurify.sanitize(",
+        "purify.sanitize(",
+        ".sanitize("
+      ],
+      "description": "XSS via namespace confusion",
+      "attackVector": "SVG/MathML elements bypass sanitization",
+      "fixedIn": "3.1.3"
+    }
+  },
+  "path-to-regexp": {
+    "CVE-2024-45296": {
+      "functions": ["pathToRegexp", "compile", "parse"],
+      "importPatterns": [
+        "pathToRegexp(",
+        "compile(",
+        "parse(",
+        "require('path-to-regexp')("
+      ],
+      "description": "ReDoS in path pattern matching",
+      "attackVector": "Malicious route patterns cause CPU exhaustion",
+      "fixedIn": "6.3.0"
+    }
+  },
+  "cookie": {
+    "CVE-2024-47764": {
+      "functions": ["parse"],
+      "importPatterns": [
+        "cookie.parse(",
+        ".parse(cookie"
+      ],
+      "description": "Cookie parsing accepts invalid characters",
+      "attackVector": "Malformed cookies may bypass security checks",
+      "fixedIn": "0.7.0"
+    }
+  },
+  "body-parser": {
+    "CVE-2024-45590": {
+      "functions": ["urlencoded"],
+      "importPatterns": [
+        "bodyParser.urlencoded(",
+        ".urlencoded("
+      ],
+      "description": "DoS via deeply nested objects",
+      "attackVector": "Deeply nested URL-encoded data exhausts resources",
+      "fixedIn": "1.20.3"
+    }
+  },
+  "send": {
+    "CVE-2024-43799": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Template injection in error messages",
+      "attackVector": "Crafted URLs inject content in error pages",
+      "fixedIn": "0.19.0"
+    }
+  },
+  "serve-static": {
+    "CVE-2024-43800": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "Template injection in error messages",
+      "attackVector": "Crafted URLs inject content in error pages",
+      "fixedIn": "1.16.0"
+    }
+  },
+  "debug": {
+    "CVE-2017-16137": {
+      "functions": ["*"],
+      "importPatterns": ["*"],
+      "description": "ReDoS in debug output formatting",
+      "attackVector": "Long strings with specific patterns cause CPU hang",
+      "fixedIn": "2.6.9"
+    }
+  },
+  "node-forge": {
+    "CVE-2022-24771": {
+      "functions": ["pki.rsa.setPublicKey", "pki.publicKeyFromPem"],
+      "importPatterns": [
+        "forge.pki.rsa.setPublicKey(",
+        "forge.pki.publicKeyFromPem(",
+        ".setPublicKey(",
+        ".publicKeyFromPem("
+      ],
+      "description": "Signature verification bypass",
+      "attackVector": "Crafted keys can bypass RSA signature verification",
+      "fixedIn": "1.3.0"
+    },
+    "CVE-2022-24772": {
+      "functions": ["pki.rsa.setPublicKey"],
+      "importPatterns": [
+        "forge.pki.rsa.setPublicKey(",
+        ".setPublicKey("
+      ],
+      "description": "Signature verification bypass with e=1",
+      "attackVector": "Public keys with e=1 bypass signature checks",
+      "fixedIn": "1.3.0"
+    }
+  },
+  "async": {
+    "CVE-2021-43138": {
+      "functions": ["mapValues", "forEachOf"],
+      "importPatterns": [
+        "async.mapValues(",
+        "async.forEachOf(",
+        ".mapValues(",
+        ".forEachOf("
+      ],
+      "description": "Prototype Pollution via mapValues",
+      "attackVector": "User-controlled keys pollute Object prototype",
+      "fixedIn": "3.2.2"
+    }
+  },
+  "underscore": {
+    "CVE-2021-23358": {
+      "functions": ["template"],
+      "importPatterns": [
+        "_.template(",
+        "underscore.template(",
+        ".template("
+      ],
+      "description": "Arbitrary code execution in template",
+      "attackVector": "User-controlled template strings execute code",
+      "fixedIn": "1.13.0"
+    }
+  },
+  "nth-check": {
+    "CVE-2021-3803": {
+      "functions": ["nthCheck", "parse", "compile"],
+      "importPatterns": [
+        "nthCheck(",
+        "parse(",
+        "compile("
+      ],
+      "description": "ReDoS in CSS selector parsing",
+      "attackVector": "Malicious nth-child selectors cause CPU exhaustion",
+      "fixedIn": "2.0.1"
+    }
+  },
+  "postcss": {
+    "CVE-2023-44270": {
+      "functions": ["parse"],
+      "importPatterns": [
+        "postcss.parse(",
+        ".parse(css"
+      ],
+      "description": "ReDoS in CSS parsing",
+      "attackVector": "Malformed CSS causes CPU exhaustion",
+      "fixedIn": "8.4.31"
+    }
+  }
+}

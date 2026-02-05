@@ -255,7 +255,7 @@ export function generateActionList(scanData, projectInfo = {}) {
       healthScore: scanData.healthScore || scanData.score || scanData.health_score,
       grade: scanData.grade,
       generatedAt: new Date().toISOString(),
-      peerAuditVersion: '1.0.0'
+      swynxVersion: '1.0.0'
     },
     summary,
     issues,

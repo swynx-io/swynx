@@ -193,7 +193,7 @@ export async function scanCommand(projectPath, options) {
 
   } catch (error) {
     if (ciMode) {
-      console.error(`PEER-AUDIT ERROR: ${error.message}`);
+      console.error(`SWYNX ERROR: ${error.message}`);
     } else {
       console.error(` Scan failed: ${error.message}\n`);
     }

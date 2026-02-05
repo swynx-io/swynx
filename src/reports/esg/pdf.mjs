@@ -59,7 +59,7 @@ export async function generateESGPDF(data) {
       // ===== HEADER =====
       doc.fontSize(24)
          .fillColor(primaryColor)
-         .text('PEER AUDIT', 50, 50);
+         .text('SWYNX', 50, 50);
 
       doc.fontSize(16)
          .fillColor(textColor)

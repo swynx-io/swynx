@@ -11,14 +11,14 @@ export { DEFAULT_CONFIG, DEFAULT_COSTS, DEFAULT_CI, getCurrencySymbol };
 /**
  * Determine the data directory for Swynx.
  * Priority:
- * 1. PEER_AUDIT_DATA_DIR env var (explicit override)
+ * 1. SWYNX_DATA_DIR env var (explicit override, also supports legacy PEER_AUDIT_DATA_DIR)
  * 2. /var/lib/swynx if exists and writable (systemd/server install)
  * 3. ~/.swynx (user install, default)
  */
 function getDataDir() {
   // 1. Explicit env var takes priority
-  if (process.env.PEER_AUDIT_DATA_DIR) {
-    return process.env.PEER_AUDIT_DATA_DIR;
+  if (process.env.SWYNX_DATA_DIR || process.env.PEER_AUDIT_DATA_DIR) {
+    return process.env.SWYNX_DATA_DIR || process.env.PEER_AUDIT_DATA_DIR;
   }
 
   // 2. If /var/lib/swynx exists and is writable, use it (systemd/server install)

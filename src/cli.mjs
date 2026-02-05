@@ -60,7 +60,7 @@ program
   .action(async (path, opts) => {
     const root = resolve(path);
 
-    const { scan } = await import('./scanner/index.mjs');
+    const { scan } = await import('./scanner-legacy/index.mjs');
     const { loadKnowledge } = await import('./knowledge/loader.mjs');
 
     if (opts.verbose) {
@@ -178,7 +178,7 @@ program
   .action(async (path, opts) => {
     const root = resolve(path);
 
-    const { scan } = await import('./scanner/index.mjs');
+    const { scan } = await import('./scanner-legacy/index.mjs');
     const { loadKnowledge } = await import('./knowledge/loader.mjs');
 
     console.error('Running verification scan...');

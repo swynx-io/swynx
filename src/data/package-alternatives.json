@@ -1,0 +1,146 @@
+{
+  "moment": {
+    "alternatives": [
+      { "name": "dayjs", "size": 2000, "weeklyDownloads": 15000000, "description": "2KB immutable date library" },
+      { "name": "date-fns", "size": 19000, "weeklyDownloads": 20000000, "description": "Modern modular date utility" },
+      { "name": "luxon", "size": 29000, "weeklyDownloads": 5000000, "description": "DateTime library by Moment team" }
+    ],
+    "size": 290000,
+    "reason": "moment is 290KB with mutable API and locale bloat"
+  },
+  "lodash": {
+    "alternatives": [
+      { "name": "lodash-es", "size": 80000, "weeklyDownloads": 12000000, "description": "ES modules version, tree-shakeable" },
+      { "name": "native", "size": 0, "weeklyDownloads": null, "description": "Array.map, Object.entries, etc." }
+    ],
+    "size": 530000,
+    "reason": "Full lodash imports everything; use lodash-es or native methods"
+  },
+  "axios": {
+    "alternatives": [
+      { "name": "native fetch", "size": 0, "weeklyDownloads": null, "description": "Built into Node 18+ and all browsers" },
+      { "name": "ky", "size": 3000, "weeklyDownloads": 1500000, "description": "Tiny elegant HTTP client" }
+    ],
+    "size": 55000,
+    "reason": "Native fetch is now universal"
+  },
+  "uuid": {
+    "alternatives": [
+      { "name": "crypto.randomUUID()", "size": 0, "weeklyDownloads": null, "description": "Native in Node 14.17+ and modern browsers" }
+    ],
+    "size": 12000,
+    "reason": "Native crypto.randomUUID() exists"
+  },
+  "request": {
+    "alternatives": [
+      { "name": "node-fetch", "size": 8000, "weeklyDownloads": 40000000, "description": "Lightweight fetch for Node" },
+      { "name": "got", "size": 48000, "weeklyDownloads": 25000000, "description": "Human-friendly HTTP client" },
+      { "name": "native fetch", "size": 0, "weeklyDownloads": null, "description": "Built into Node 18+" }
+    ],
+    "size": 190000,
+    "reason": "request is deprecated since 2020"
+  },
+  "underscore": {
+    "alternatives": [
+      { "name": "lodash-es", "size": 80000, "weeklyDownloads": 12000000, "description": "More features, tree-shakeable" },
+      { "name": "native", "size": 0, "weeklyDownloads": null, "description": "Modern JS has most utilities built-in" }
+    ],
+    "size": 54000,
+    "reason": "Underscore is less maintained than lodash"
+  },
+  "bluebird": {
+    "alternatives": [
+      { "name": "native Promise", "size": 0, "weeklyDownloads": null, "description": "V8 Promise performance is now excellent" }
+    ],
+    "size": 80000,
+    "reason": "Native Promises are performant since Node 10"
+  },
+  "chalk": {
+    "alternatives": [
+      { "name": "picocolors", "size": 2600, "weeklyDownloads": 50000000, "description": "3x smaller, faster" },
+      { "name": "kleur", "size": 2800, "weeklyDownloads": 15000000, "description": "Lightweight colorizer" }
+    ],
+    "size": 9000,
+    "reason": "Lighter alternatives with same API"
+  },
+  "jquery": {
+    "alternatives": [
+      { "name": "vanilla JS", "size": 0, "weeklyDownloads": null, "description": "Modern browsers have querySelectorAll, fetch, etc." }
+    ],
+    "size": 87000,
+    "reason": "Modern browsers don't need jQuery"
+  },
+  "express-validator": {
+    "alternatives": [
+      { "name": "zod", "size": 12000, "weeklyDownloads": 8000000, "description": "TypeScript-first schema validation" },
+      { "name": "joi", "size": 35000, "weeklyDownloads": 6000000, "description": "Powerful schema validation" }
+    ],
+    "size": 42000,
+    "reason": "Zod provides better TypeScript integration"
+  },
+  "body-parser": {
+    "alternatives": [
+      { "name": "express.json()", "size": 0, "weeklyDownloads": null, "description": "Built into Express 4.16+" }
+    ],
+    "size": 24000,
+    "reason": "Express has built-in body parsing since 4.16"
+  },
+  "async": {
+    "alternatives": [
+      { "name": "native async/await", "size": 0, "weeklyDownloads": null, "description": "ES2017+ async/await is native" }
+    ],
+    "size": 32000,
+    "reason": "async/await replaces most use cases"
+  },
+  "left-pad": {
+    "alternatives": [
+      { "name": "String.padStart()", "size": 0, "weeklyDownloads": null, "description": "Native ES2017 method" }
+    ],
+    "size": 1000,
+    "reason": "Native padStart() since ES2017"
+  },
+  "is-odd": {
+    "alternatives": [
+      { "name": "n % 2 !== 0", "size": 0, "weeklyDownloads": null, "description": "One line of code" }
+    ],
+    "size": 800,
+    "reason": "Trivial one-liner"
+  },
+  "is-even": {
+    "alternatives": [
+      { "name": "n % 2 === 0", "size": 0, "weeklyDownloads": null, "description": "One line of code" }
+    ],
+    "size": 800,
+    "reason": "Trivial one-liner"
+  },
+  "is-number": {
+    "alternatives": [
+      { "name": "typeof n === 'number'", "size": 0, "weeklyDownloads": null, "description": "Native type check" }
+    ],
+    "size": 700,
+    "reason": "Trivial native check"
+  },
+  "commander": {
+    "alternatives": [
+      { "name": "minimist", "size": 4000, "weeklyDownloads": 40000000, "description": "Minimal argument parser" },
+      { "name": "yargs", "size": 18000, "weeklyDownloads": 70000000, "description": "Feature-rich but heavier" }
+    ],
+    "size": 22000,
+    "reason": "Lighter alternatives for simple CLI needs"
+  },
+  "node-fetch": {
+    "alternatives": [
+      { "name": "native fetch", "size": 0, "weeklyDownloads": null, "description": "Built into Node 18+" }
+    ],
+    "size": 8000,
+    "reason": "Native fetch available in Node 18+"
+  },
+  "express": {
+    "alternatives": [
+      { "name": "fastify", "size": 210000, "weeklyDownloads": 2000000, "description": "Faster with schema validation" },
+      { "name": "koa", "size": 35000, "weeklyDownloads": 1500000, "description": "Minimal and modern" }
+    ],
+    "size": 210000,
+    "reason": "Fastify offers better performance"
+  }
+}

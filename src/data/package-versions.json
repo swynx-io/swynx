@@ -1,0 +1,422 @@
+{
+  "lastUpdated": "2026-01-27",
+  "source": "npm registry snapshot",
+  "packages": {
+    "express": {
+      "latest": "4.21.2",
+      "publishedDate": "2024-11-15"
+    },
+    "lodash": {
+      "latest": "4.17.21",
+      "publishedDate": "2021-02-20"
+    },
+    "axios": {
+      "latest": "1.7.9",
+      "publishedDate": "2024-12-19"
+    },
+    "react": {
+      "latest": "19.0.0",
+      "publishedDate": "2024-12-05"
+    },
+    "react-dom": {
+      "latest": "19.0.0",
+      "publishedDate": "2024-12-05"
+    },
+    "typescript": {
+      "latest": "5.7.2",
+      "publishedDate": "2024-11-20"
+    },
+    "webpack": {
+      "latest": "5.97.1",
+      "publishedDate": "2024-12-10"
+    },
+    "vite": {
+      "latest": "6.0.7",
+      "publishedDate": "2024-12-30"
+    },
+    "next": {
+      "latest": "15.1.3",
+      "publishedDate": "2025-01-06"
+    },
+    "vue": {
+      "latest": "3.5.13",
+      "publishedDate": "2024-11-15"
+    },
+    "moment": {
+      "latest": "2.30.1",
+      "publishedDate": "2023-12-21"
+    },
+    "dayjs": {
+      "latest": "1.11.13",
+      "publishedDate": "2024-09-12"
+    },
+    "date-fns": {
+      "latest": "4.1.0",
+      "publishedDate": "2024-09-16"
+    },
+    "uuid": {
+      "latest": "11.0.4",
+      "publishedDate": "2024-12-05"
+    },
+    "chalk": {
+      "latest": "5.4.1",
+      "publishedDate": "2024-12-04"
+    },
+    "commander": {
+      "latest": "12.1.0",
+      "publishedDate": "2024-05-02"
+    },
+    "yargs": {
+      "latest": "17.7.2",
+      "publishedDate": "2023-05-25"
+    },
+    "ora": {
+      "latest": "8.1.1",
+      "publishedDate": "2024-10-20"
+    },
+    "inquirer": {
+      "latest": "12.2.0",
+      "publishedDate": "2024-12-09"
+    },
+    "dotenv": {
+      "latest": "16.4.7",
+      "publishedDate": "2024-11-23"
+    },
+    "cors": {
+      "latest": "2.8.5",
+      "publishedDate": "2018-11-04"
+    },
+    "helmet": {
+      "latest": "8.0.0",
+      "publishedDate": "2024-09-17"
+    },
+    "morgan": {
+      "latest": "1.10.0",
+      "publishedDate": "2020-03-20"
+    },
+    "jsonwebtoken": {
+      "latest": "9.0.2",
+      "publishedDate": "2023-07-26"
+    },
+    "bcrypt": {
+      "latest": "5.1.1",
+      "publishedDate": "2023-08-14"
+    },
+    "bcryptjs": {
+      "latest": "2.4.3",
+      "publishedDate": "2017-08-03"
+    },
+    "mongoose": {
+      "latest": "8.9.3",
+      "publishedDate": "2025-01-02"
+    },
+    "pg": {
+      "latest": "8.13.1",
+      "publishedDate": "2024-10-30"
+    },
+    "mysql2": {
+      "latest": "3.11.5",
+      "publishedDate": "2024-11-22"
+    },
+    "redis": {
+      "latest": "4.7.0",
+      "publishedDate": "2024-07-30"
+    },
+    "ioredis": {
+      "latest": "5.4.2",
+      "publishedDate": "2024-12-02"
+    },
+    "prisma": {
+      "latest": "6.2.1",
+      "publishedDate": "2025-01-13"
+    },
+    "sequelize": {
+      "latest": "6.37.5",
+      "publishedDate": "2024-10-30"
+    },
+    "knex": {
+      "latest": "3.1.0",
+      "publishedDate": "2024-01-17"
+    },
+    "jest": {
+      "latest": "29.7.0",
+      "publishedDate": "2023-09-12"
+    },
+    "mocha": {
+      "latest": "11.0.1",
+      "publishedDate": "2024-12-06"
+    },
+    "vitest": {
+      "latest": "2.1.8",
+      "publishedDate": "2024-11-26"
+    },
+    "cypress": {
+      "latest": "14.0.0",
+      "publishedDate": "2025-01-22"
+    },
+    "playwright": {
+      "latest": "1.49.1",
+      "publishedDate": "2024-12-09"
+    },
+    "eslint": {
+      "latest": "9.18.0",
+      "publishedDate": "2025-01-17"
+    },
+    "prettier": {
+      "latest": "3.4.2",
+      "publishedDate": "2024-11-26"
+    },
+    "nodemon": {
+      "latest": "3.1.9",
+      "publishedDate": "2024-12-18"
+    },
+    "pm2": {
+      "latest": "5.4.3",
+      "publishedDate": "2024-11-13"
+    },
+    "socket.io": {
+      "latest": "4.8.1",
+      "publishedDate": "2024-10-31"
+    },
+    "ws": {
+      "latest": "8.18.0",
+      "publishedDate": "2024-06-23"
+    },
+    "node-fetch": {
+      "latest": "3.3.2",
+      "publishedDate": "2023-06-06"
+    },
+    "got": {
+      "latest": "14.4.5",
+      "publishedDate": "2024-11-23"
+    },
+    "superagent": {
+      "latest": "10.1.1",
+      "publishedDate": "2024-10-21"
+    },
+    "sharp": {
+      "latest": "0.33.5",
+      "publishedDate": "2024-07-23"
+    },
+    "jimp": {
+      "latest": "1.6.0",
+      "publishedDate": "2024-09-13"
+    },
+    "pdfkit": {
+      "latest": "0.15.2",
+      "publishedDate": "2024-11-25"
+    },
+    "puppeteer": {
+      "latest": "23.11.1",
+      "publishedDate": "2024-12-09"
+    },
+    "cheerio": {
+      "latest": "1.0.0",
+      "publishedDate": "2024-07-01"
+    },
+    "jsdom": {
+      "latest": "25.0.1",
+      "publishedDate": "2024-09-20"
+    },
+    "marked": {
+      "latest": "15.0.6",
+      "publishedDate": "2025-01-19"
+    },
+    "highlight.js": {
+      "latest": "11.11.1",
+      "publishedDate": "2024-12-16"
+    },
+    "winston": {
+      "latest": "3.17.0",
+      "publishedDate": "2024-11-06"
+    },
+    "pino": {
+      "latest": "9.6.0",
+      "publishedDate": "2024-12-10"
+    },
+    "bunyan": {
+      "latest": "1.8.15",
+      "publishedDate": "2021-03-08"
+    },
+    "debug": {
+      "latest": "4.4.0",
+      "publishedDate": "2024-12-09"
+    },
+    "ajv": {
+      "latest": "8.17.1",
+      "publishedDate": "2024-08-06"
+    },
+    "joi": {
+      "latest": "17.13.3",
+      "publishedDate": "2024-06-28"
+    },
+    "zod": {
+      "latest": "3.24.1",
+      "publishedDate": "2024-12-05"
+    },
+    "yup": {
+      "latest": "1.6.1",
+      "publishedDate": "2024-12-12"
+    },
+    "validator": {
+      "latest": "13.12.0",
+      "publishedDate": "2024-05-11"
+    },
+    "rxjs": {
+      "latest": "7.8.1",
+      "publishedDate": "2023-03-03"
+    },
+    "ramda": {
+      "latest": "0.30.1",
+      "publishedDate": "2024-05-09"
+    },
+    "immer": {
+      "latest": "10.1.1",
+      "publishedDate": "2024-05-20"
+    },
+    "zustand": {
+      "latest": "5.0.3",
+      "publishedDate": "2025-01-08"
+    },
+    "redux": {
+      "latest": "5.0.1",
+      "publishedDate": "2023-12-08"
+    },
+    "mobx": {
+      "latest": "6.13.5",
+      "publishedDate": "2024-11-18"
+    },
+    "formik": {
+      "latest": "2.4.6",
+      "publishedDate": "2024-03-06"
+    },
+    "react-hook-form": {
+      "latest": "7.54.2",
+      "publishedDate": "2025-01-05"
+    },
+    "styled-components": {
+      "latest": "6.1.14",
+      "publishedDate": "2024-12-03"
+    },
+    "tailwindcss": {
+      "latest": "4.0.0",
+      "publishedDate": "2025-01-21"
+    },
+    "sass": {
+      "latest": "1.83.1",
+      "publishedDate": "2025-01-17"
+    },
+    "postcss": {
+      "latest": "8.4.49",
+      "publishedDate": "2024-11-09"
+    },
+    "autoprefixer": {
+      "latest": "10.4.20",
+      "publishedDate": "2024-08-01"
+    },
+    "@babel/core": {
+      "latest": "7.26.0",
+      "publishedDate": "2024-10-25"
+    },
+    "esbuild": {
+      "latest": "0.24.2",
+      "publishedDate": "2024-12-11"
+    },
+    "rollup": {
+      "latest": "4.29.1",
+      "publishedDate": "2024-12-14"
+    },
+    "parcel": {
+      "latest": "2.13.3",
+      "publishedDate": "2024-12-03"
+    },
+    "fast-glob": {
+      "latest": "3.3.3",
+      "publishedDate": "2024-12-04"
+    },
+    "glob": {
+      "latest": "11.0.0",
+      "publishedDate": "2024-04-12"
+    },
+    "chokidar": {
+      "latest": "4.0.3",
+      "publishedDate": "2024-12-20"
+    },
+    "fs-extra": {
+      "latest": "11.2.0",
+      "publishedDate": "2023-11-28"
+    },
+    "rimraf": {
+      "latest": "6.0.1",
+      "publishedDate": "2024-04-24"
+    },
+    "cross-env": {
+      "latest": "7.0.3",
+      "publishedDate": "2021-01-06"
+    },
+    "concurrently": {
+      "latest": "9.1.2",
+      "publishedDate": "2024-12-20"
+    },
+    "husky": {
+      "latest": "9.1.7",
+      "publishedDate": "2024-11-13"
+    },
+    "lint-staged": {
+      "latest": "15.3.0",
+      "publishedDate": "2024-12-18"
+    },
+    "co2": {
+      "latest": "0.12.0",
+      "publishedDate": "2024-11-28"
+    },
+    "semver": {
+      "latest": "7.6.3",
+      "publishedDate": "2024-07-11"
+    },
+    "minimist": {
+      "latest": "1.2.8",
+      "publishedDate": "2023-02-09"
+    },
+    "qs": {
+      "latest": "6.13.1",
+      "publishedDate": "2024-10-23"
+    },
+    "body-parser": {
+      "latest": "1.20.3",
+      "publishedDate": "2024-09-10"
+    },
+    "cookie-parser": {
+      "latest": "1.4.7",
+      "publishedDate": "2024-10-04"
+    },
+    "multer": {
+      "latest": "1.4.5-lts.1",
+      "publishedDate": "2022-04-04"
+    },
+    "compression": {
+      "latest": "1.7.5",
+      "publishedDate": "2024-09-10"
+    },
+    "http-proxy-middleware": {
+      "latest": "3.0.3",
+      "publishedDate": "2024-09-03"
+    },
+    "express-rate-limit": {
+      "latest": "7.5.0",
+      "publishedDate": "2024-11-25"
+    },
+    "passport": {
+      "latest": "0.7.0",
+      "publishedDate": "2024-01-19"
+    },
+    "express-session": {
+      "latest": "1.18.1",
+      "publishedDate": "2024-09-10"
+    },
+    "connect-redis": {
+      "latest": "8.0.1",
+      "publishedDate": "2024-10-20"
+    }
+  }
+}

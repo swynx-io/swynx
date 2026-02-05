@@ -18,6 +18,10 @@ export async function loadConfig(configPath = null, projectPath = null) {
   const paths = configPath
     ? [configPath]
     : [
+        './swynx.config.js',
+        './swynx.config.json',
+        projectPath ? resolve(projectPath, 'swynx.config.js') : null,
+        projectPath ? resolve(projectPath, 'swynx.config.json') : null,
         './peer-audit.config.js',
         './peer-audit.config.json',
         projectPath ? resolve(projectPath, 'peer-audit.config.js') : null,

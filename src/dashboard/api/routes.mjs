@@ -2,8 +2,8 @@
 // API routes for Codebase Audit Dashboard
 
 import { Router } from 'express';
-// Use Swynx scanner for dead code analysis
-import { scan as scanProject } from '../../scanner/index.mjs';
+// Swynx full scanner - all 14+ analysis modules
+import { scanProject } from '../../scanner/index.mjs';
 import {
   initDatabase,
   saveScan,
@@ -527,7 +527,7 @@ export async function createRoutes() {
         return res.status(400).json({ success: false, error: 'projectPath is required' });
       }
 
-      // Use PEER Audit's full scanner - returns complete analysis
+      // Swynx full scanner - returns complete analysis
       const scanResult = await scanProject(projectPath, config || {});
 
       await saveScan(scanResult);
@@ -592,20 +592,13 @@ export async function createRoutes() {
 
     // Progress callback for the scanner
     const onProgress = (progress) => {
-      // Normalize progress format from scanner
-      // Scanner sends: { phase, message?, filesFound?, current?, total? }
-      // Route expects: { phase, percent, detail, current, total }
-      const { phase, message, filesFound, current: rawCurrent, total: rawTotal } = progress;
+      // Scanner sends: { phase, percent, detail, current, total }
+      const { phase, percent: rawPercent, detail: rawDetail, current: rawCurrent, total: rawTotal } = progress;
 
-      // Derive current/total - discovery sends filesFound instead of current
-      const current = rawCurrent ?? filesFound ?? 0;
+      const current = rawCurrent ?? 0;
       const total = rawTotal ?? 0;
-
-      // Calculate percent if we have current/total
-      const percent = total > 0 ? (current / total) * 100 : 0;
-
-      // Use message as detail
-      const detail = message || '';
+      const percent = rawPercent ?? (total > 0 ? (current / total) * 100 : 0);
+      const detail = rawDetail || '';
 
       // Debug log every progress event
       console.log(`[SCAN] ${phase} | ${Math.round(percent)}% | ${detail?.slice(-40) || '-'} | ${current}/${total}`);
@@ -704,15 +697,15 @@ export async function createRoutes() {
       const workers = getSetting('performance.workers', 0) || undefined;
       console.log('[scan-stream] Starting scan for:', projectPath);
 
-      let swynxResult;
+      let scanResult;
       try {
-        swynxResult = await scanProject(projectPath, { onProgress, workers });
+        scanResult = await scanProject(projectPath, { onProgress, workers });
       } catch (scanErr) {
         console.error('[scan-stream] Scanner threw error:', scanErr?.message || scanErr);
         throw new Error(`Scanner error: ${scanErr?.message || scanErr}`);
       }
 
-      if (!swynxResult) {
+      if (!scanResult) {
         console.error('[scan-stream] Scanner returned null/undefined result');
         throw new Error('Scanner returned empty result');
       }
@@ -720,39 +713,7 @@ export async function createRoutes() {
       const duration = Date.now() - startTime;
       console.log('[scan-stream] Scan completed in', duration, 'ms, processing results...');
 
-      // Adapt Swynx output to dashboard-compatible format
-      const deadRate = parseFloat(swynxResult.summary?.deadRate) || 0;
-      const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const healthScore = Math.max(0, 100 - deadRate * 10);
-      // Calculate grade from score
-      const grade = healthScore >= 90 ? 'A' : healthScore >= 80 ? 'B' : healthScore >= 70 ? 'C' : healthScore >= 60 ? 'D' : 'F';
-      const scanResult = {
-        id: scanId,
-        projectPath,
-        scannedAt: new Date().toISOString(),
-        duration,
-        healthScore: { score: healthScore, grade },
-        summary: {
-          totalFiles: swynxResult.summary?.totalFiles || 0,
-          wastePercent: deadRate,
-          wasteSizeBytes: swynxResult.summary?.totalDeadBytes || 0,
-          totalSizeBytes: swynxResult.summary?.totalDeadBytes || 0, // approximate
-        },
-        deadCode: {
-          files: swynxResult.deadFiles || [],
-          summary: {
-            count: swynxResult.deadFiles?.length || 0,
-            sizeBytes: swynxResult.summary?.totalDeadBytes || 0,
-            sizeFormatted: `${((swynxResult.summary?.totalDeadBytes || 0) / 1024).toFixed(1)} KB`
-          }
-        },
-        security: { summary: { critical: 0, high: 0, medium: 0, low: 0 }, vulnerabilities: [], critical: [], high: [], medium: [], low: [] },
-        outdated: { packages: [], summary: { total: 0 }, totalOutdated: 0 },
-        emissions: { monthly: { kgCO2: 0 }, current: { monthlyCO2Kg: 0 } },
-        entryPoints: swynxResult.entryPoints || [],
-        raw: swynxResult // Keep original for debugging
-      };
-
+      // Scanner returns the full result shape — save directly
       console.log('[scan-stream] Saving scan result to database...');
       try {
         await saveScan(scanResult);
@@ -1086,7 +1047,7 @@ export async function createRoutes() {
       }
 
       // Convert to reporter shape if needed
-      // PEER Audit stores dead code in details.deadCode.fullyDeadFiles
+      // Swynx stores dead code in details.deadCode.fullyDeadFiles
       const deadFiles = scanResult.deadFiles ||
                         scanResult.details?.deadCode?.fullyDeadFiles ||
                         scanResult.details?.deadCode?.orphanFiles ||
@@ -1139,7 +1100,7 @@ export async function createRoutes() {
       }
 
       // Convert to reporter shape if needed
-      // PEER Audit stores dead code in details.deadCode.fullyDeadFiles
+      // Swynx stores dead code in details.deadCode.fullyDeadFiles
       const deadFiles = scanResult.deadFiles ||
                         scanResult.details?.deadCode?.fullyDeadFiles ||
                         scanResult.details?.deadCode?.orphanFiles ||
@@ -1526,7 +1487,7 @@ export async function createRoutes() {
       }
 
       const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
-      // Support both PEER Audit format (details.deadCode) and Swynx format (deadCode)
+      // Support both formats: details.deadCode (full scan) and deadCode (legacy)
       const deadCode = scanData.details?.deadCode || scanData.deadCode || {};
 
       // Support multiple formats: fullyDeadFiles, orphanFiles, files (Swynx)
@@ -1633,7 +1594,7 @@ export async function createRoutes() {
       }
 
       const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
-      // Support both PEER Audit format (details.deadCode) and Swynx format (deadCode)
+      // Support both formats: details.deadCode (full scan) and deadCode (legacy)
       const deadCode = scanData.details?.deadCode || scanData.deadCode || {};
 
       // Support multiple formats: fullyDeadFiles, orphanFiles, files (Swynx)

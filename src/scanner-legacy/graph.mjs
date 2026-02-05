@@ -104,6 +104,25 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
   // All file paths
   const allFilePaths = [...fileImports.keys()];
 
+  // === PERF: Directory index for O(1) directory lookups instead of O(n) iteration ===
+  const dirIndex = new Map();       // dir -> Set<fullPath>
+  const suffixIndex = new Map();    // filename (e.g. "Foo.java") -> [fullPath, ...]
+  const goFilesByDir = new Map();   // dir -> [goFiles not ending in _test.go]
+  for (const fp of allFilePaths) {
+    const d = dirname(fp);
+    if (!dirIndex.has(d)) dirIndex.set(d, new Set());
+    dirIndex.get(d).add(fp);
+
+    const fname = basename(fp);
+    if (!suffixIndex.has(fname)) suffixIndex.set(fname, []);
+    suffixIndex.get(fname).push(fp);
+
+    if (fp.endsWith('.go') && !fp.endsWith('_test.go')) {
+      if (!goFilesByDir.has(d)) goFilesByDir.set(d, []);
+      goFilesByDir.get(d).push(fp);
+    }
+  }
+
   // Mark glob-imported files as reachable
   for (const file of parsedFiles) {
     const fileDir = dirname(file.relativePath || '');
@@ -116,7 +135,7 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
     }
   }
 
-  // Detect directory-scanning auto-loaders
+  // Detect directory-scanning auto-loaders (using directory index)
   if (projectPath) {
     const dirScanPatterns = /requireDirectory\s*[(<]|readdirSync\s*\(\s*__dirname|glob\.sync\s*\(|globSync\s*\(/;
     for (const file of parsedFiles) {
@@ -127,10 +146,9 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
       try {
         const source = readFileSync(join(projectPath, filePath), 'utf-8');
         if (dirScanPatterns.test(source)) {
-          for (const otherFile of allFilePaths) {
-            if (otherFile !== filePath && dirname(otherFile) === fileDir) {
-              reachable.add(otherFile);
-            }
+          const sameDir = dirIndex.get(fileDir) || new Set();
+          for (const otherFile of sameDir) {
+            if (otherFile !== filePath) reachable.add(otherFile);
           }
         }
       } catch {}
@@ -169,19 +187,22 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
   }
 
   function findMatchingFiles(modulePath, extensions) {
-    const matches = [];
+    const matchSet = new Set();
     for (const ext of extensions) {
       const fullPath = modulePath + ext;
-      if (fileImports.has(fullPath)) matches.push(fullPath);
+      if (fileImports.has(fullPath)) matchSet.add(fullPath);
       for (const prefix of ['', 'src/', 'app/', 'lib/']) {
         const prefixed = prefix + fullPath;
-        if (fileImports.has(prefixed) && !matches.includes(prefixed)) matches.push(prefixed);
+        if (fileImports.has(prefixed)) matchSet.add(prefixed);
       }
-      for (const fp of fileImports.keys()) {
-        if (fp.endsWith('/' + fullPath) && !matches.includes(fp)) matches.push(fp);
+      // Use suffix index instead of iterating all file paths
+      const fname = basename(fullPath);
+      const candidates = suffixIndex.get(fname) || [];
+      for (const fp of candidates) {
+        if (fp.endsWith('/' + fullPath)) matchSet.add(fp);
       }
     }
-    return matches;
+    return [...matchSet];
   }
 
   // Resolve an import to file path(s)
@@ -230,17 +251,19 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
       // Strategy 1: FQN map lookup (BEFORE framework filter!)
       if (javaFqnMap.has(importPath)) return [javaFqnMap.get(importPath)];
 
-      // Strategy 2: Wildcard imports
+      // Strategy 2: Wildcard imports (optimized with directory index)
       if (importPath.endsWith('.*')) {
         const pkgFqn = importPath.slice(0, -2);
         const pkgDir = pkgFqn.replace(/\./g, '/');
         const pkgFiles = javaPackageDirMap.get(pkgDir);
         if (pkgFiles?.length > 0) return [...pkgFiles];
+        // Fallback: check all dirs that contain pkgDir as suffix
         const matches = [];
-        for (const fp of fileImports.keys()) {
-          if ((fp.endsWith('.java') || fp.endsWith('.kt')) && fp.includes(pkgDir + '/')) {
-            const after = fp.slice(fp.indexOf(pkgDir + '/') + pkgDir.length + 1);
-            if (!after.includes('/')) matches.push(fp);
+        for (const [dir, files] of dirIndex) {
+          if (dir === pkgDir || dir.endsWith('/' + pkgDir)) {
+            for (const fp of files) {
+              if (fp.endsWith('.java') || fp.endsWith('.kt')) matches.push(fp);
+            }
           }
         }
         return matches;
@@ -270,14 +293,14 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
       }
       if (matches.length > 0) return matches;
 
-      // Strategy 6: Class name fallback
+      // Strategy 6: Class name fallback (using suffix index)
       const className = parts[parts.length - 1];
       if (className && className[0] === className[0].toUpperCase()) {
         const deadPattern = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)/i;
-        for (const fp of fileImports.keys()) {
-          if ((fp.endsWith('/' + className + ext) || fp.endsWith(className + ext)) && !deadPattern.test(fp)) {
-            if (!matches.includes(fp)) matches.push(fp);
-          }
+        const targetName = className + ext;
+        const candidates = suffixIndex.get(targetName) || [];
+        for (const fp of candidates) {
+          if (!deadPattern.test(fp) && !matches.includes(fp)) matches.push(fp);
         }
       }
       return matches;
@@ -318,7 +341,7 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
       return [];
     }
 
-    // Go imports
+    // Go imports (optimized with directory index)
     if (isGo && !importPath.startsWith('.') && !importPath.startsWith('/')) {
       const deadGoPattern = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)[^/]*\.go$/i;
       const matches = [];
@@ -327,27 +350,29 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
       if (goModulePath && importPath.startsWith(goModulePath)) {
         let localPath = importPath.slice(goModulePath.length);
         if (localPath.startsWith('/')) localPath = localPath.slice(1);
-        const pkgDir = localPath ? localPath + '/' : '';
-        for (const fp of fileImports.keys()) {
-          if (!fp.endsWith('.go') || fp.endsWith('_test.go')) continue;
-          if (fp.startsWith(pkgDir) || (!localPath && !fp.includes('/'))) {
-            const after = localPath ? fp.slice(pkgDir.length) : fp;
-            if (!after.includes('/') && !deadGoPattern.test(fp)) matches.push(fp);
-          }
+        const pkgDir = localPath || '.';
+        const dirFiles = goFilesByDir.get(pkgDir) || [];
+        for (const fp of dirFiles) {
+          if (!deadGoPattern.test(fp)) matches.push(fp);
         }
         if (matches.length > 0) return matches;
+        // Also try root-level files for empty local path
+        if (!localPath) {
+          const rootFiles = goFilesByDir.get('.') || [];
+          for (const fp of rootFiles) {
+            if (!deadGoPattern.test(fp)) matches.push(fp);
+          }
+          if (matches.length > 0) return matches;
+        }
       }
 
-      // Strategy 2: Directory segment matching
+      // Strategy 2: Directory segment matching (using directory index)
       const segments = importPath.split('/');
       for (let i = 0; i < segments.length; i++) {
-        const candidateDir = segments.slice(i).join('/') + '/';
-        for (const fp of fileImports.keys()) {
-          if (!fp.endsWith('.go') || fp.endsWith('_test.go')) continue;
-          if (fp.startsWith(candidateDir)) {
-            const after = fp.slice(candidateDir.length);
-            if (!after.includes('/') && !deadGoPattern.test(fp) && !matches.includes(fp)) matches.push(fp);
-          }
+        const candidateDir = segments.slice(i).join('/');
+        const dirFiles = goFilesByDir.get(candidateDir) || [];
+        for (const fp of dirFiles) {
+          if (!deadGoPattern.test(fp)) matches.push(fp);
         }
         if (matches.length > 0) return matches;
       }
@@ -365,10 +390,13 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
     } else if (importPath.startsWith('/')) {
       resolved = importPath.slice(1);
     } else {
-      // Path alias resolution
+      // Path alias resolution (cached sorted aliases)
       const fileAliases = getAliasesForFile(fromFile);
       let aliasResolved = false;
-      const sorted = [...fileAliases.entries()].sort((a, b) => b[0].length - a[0].length);
+      if (!fileAliases._sorted) {
+        fileAliases._sorted = [...fileAliases.entries()].sort((a, b) => b[0].length - a[0].length);
+      }
+      const sorted = fileAliases._sorted;
 
       for (const [alias, target] of sorted) {
         if (importPath.startsWith(alias)) {
@@ -479,22 +507,24 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
     return matches;
   }
 
-  // BFS walk
+  // BFS walk (optimized: index-based queue instead of shift())
   function walkFromFile(startFile) {
     const queue = [startFile];
+    let qi = 0;
 
-    while (queue.length > 0) {
-      const current = queue.shift();
+    while (qi < queue.length) {
+      const current = queue[qi++];
       if (visited.has(current)) continue;
       visited.add(current);
       reachable.add(current);
 
-      // Go same-package linking
+      // Go same-package linking (using directory index for O(1) lookup)
       if (current.endsWith('.go')) {
         const currentDir = dirname(current);
         const deadGoPattern = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)[^/]*\.go$/i;
-        for (const fp of fileImports.keys()) {
-          if (fp.endsWith('.go') && !visited.has(fp) && !deadGoPattern.test(fp) && dirname(fp) === currentDir) {
+        const sameDir = goFilesByDir.get(currentDir) || [];
+        for (const fp of sameDir) {
+          if (!visited.has(fp) && !deadGoPattern.test(fp)) {
             queue.push(fp);
           }
         }
@@ -583,17 +613,40 @@ export function buildReachableFiles(entryPointFiles, parsedFiles, projectPath = 
     }
   }
 
-  // Walk from each entry point
+  // Walk from each entry point (optimized: build index once, O(1) per lookup)
+  const epExactSet = new Set(allFilePaths);  // For exact matches
   for (const ep of entryPointFiles) {
-    for (const file of parsedFiles) {
-      const fp = file.relativePath;
-      const fpNoExt = fp.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go)$/, '');
-      const epNoExt = ep.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go)$/, '');
-
-      if (fp === ep || fpNoExt === epNoExt ||
-          fp.endsWith('/' + ep) || fp.endsWith('/' + epNoExt + '.tsx') ||
-          fp.endsWith('/' + epNoExt + '.ts') || fp.endsWith('/' + epNoExt + '.js')) {
+    // Try exact match first
+    if (epExactSet.has(ep)) {
+      walkFromFile(ep);
+      continue;
+    }
+    // Try extension-less match
+    const epNoExt = ep.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go|rs|rb|php)$/, '');
+    const variants = filePathsNoExt.get(epNoExt);
+    if (variants) {
+      for (const v of variants) walkFromFile(v);
+      continue;
+    }
+    // Try suffix match (ep might be a relative path like "src/index.ts")
+    const epBase = basename(ep);
+    const candidates = suffixIndex.get(epBase) || [];
+    for (const fp of candidates) {
+      if (fp.endsWith('/' + ep)) {
         walkFromFile(fp);
+      }
+    }
+    // Also try suffix match with different extensions
+    if (!epBase.includes('.')) continue;
+    const epBaseNoExt = epBase.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go|rs|rb|php)$/, '');
+    for (const ext of ['.tsx', '.ts', '.js', '.mjs', '.jsx']) {
+      const altName = epBaseNoExt + ext;
+      const altCandidates = suffixIndex.get(altName) || [];
+      for (const fp of altCandidates) {
+        const fpNoExt = fp.replace(/\.([mc]?[jt]s|[jt]sx|vue|py|pyi|java|kt|kts|go|rs|rb|php)$/, '');
+        if (fpNoExt === epNoExt || fpNoExt.endsWith('/' + epNoExt)) {
+          walkFromFile(fp);
+        }
       }
     }
   }

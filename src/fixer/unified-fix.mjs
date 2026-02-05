@@ -13,7 +13,7 @@ import { execSync } from 'child_process';
 /**
  * Unified fix - clean up all detected waste
  * @param {string} projectPath - Project root
- * @param {object} scanResult - Full scan result from PEER Audit/Swynx
+ * @param {object} scanResult - Full scan result from Swynx
  * @param {object} options - Options
  */
 export async function unifiedFix(projectPath, scanResult, options = {}) {
