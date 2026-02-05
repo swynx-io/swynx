@@ -150,7 +150,7 @@ print_success() {
   echo -e "    ${CYAN}swynx scan .${NC}              # Basic scan"
   echo -e "    ${CYAN}swynx scan . --qualify${NC}   # With AI analysis"
   echo ""
-  echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:9000${NC}"
+  echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:8000${NC}"
   echo -e "  Docs:      ${BLUE}https://github.com/swynx-io/swynx${NC}"
   echo ""
 }
