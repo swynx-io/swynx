@@ -140,7 +140,7 @@ spinner() {
 }
 
 install_ai_engine() {
-  echo -e "${BLUE}Installing Swynx Engine...${NC}"
+  echo -e "${BLUE}Setting up Swynx AI Engine...${NC}"
 
   # Install engine runtime if missing
   if ! command -v ollama &> /dev/null; then
@@ -148,32 +148,26 @@ install_ai_engine() {
     curl -fsSL https://ollama.com/install.sh 2>/dev/null | sh > /dev/null 2>&1
   fi
 
-  # Wait for engine API to be available
-  echo "  Starting engine..."
-  if ! wait_for_engine; then
-    # Try starting manually if systemd didn't work
+  # Start engine if not running
+  if ! curl -s http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then
     nohup ollama serve > /dev/null 2>&1 &
-    sleep 3
-    if ! wait_for_engine; then
-      echo -e "${YELLOW}⚠ Engine not ready - AI will warm on first use${NC}"
-      return 0
+    sleep 2
+  fi
+
+  # Download and warm model in background - don't block install
+  if command -v ollama &> /dev/null; then
+    if ! ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
+      echo "  AI model will download in background (~1.8GB)"
+      (ollama pull "$AI_MODEL" > /dev/null 2>&1 && \
+       curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1) &
+    else
+      # Model exists, just warm it in background
+      (curl -s --max-time 60 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1) &
     fi
+    echo -e "${GREEN}✓ AI engine starting in background${NC}"
+  else
+    echo -e "${YELLOW}⚠ Ollama not available - AI features disabled${NC}"
   fi
-
-  # Download AI model if not present
-  if ! ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
-    echo "  Downloading model (~1.8GB)..."
-    ollama pull "$AI_MODEL"
-  fi
-
-  # Pre-warm the model with progress indicator (max 120s)
-  echo ""
-  (curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d '{"model":"qwen2.5-coder:3b","prompt":"hi","stream":false}' > /dev/null 2>&1) &
-  local warm_pid=$!
-  spinner $warm_pid
-  wait $warm_pid 2>/dev/null || true
-
-  echo -e "${GREEN}✓ Swynx Engine ready${NC}"
 }
 
 start_dashboard() {
