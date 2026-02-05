@@ -422,6 +422,60 @@ export async function createRoutes() {
     res.end();
   });
 
+  // Streaming AI qualification via POST (for frontend)
+  router.post('/ai/qualify/stream', async (req, res) => {
+    const { projectPath, deadFiles, totalFiles, limit = 50 } = req.body;
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const send = (event, data) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    if (!deadFiles || !Array.isArray(deadFiles) || deadFiles.length === 0) {
+      send('complete', { message: 'No dead files to qualify' });
+      return res.end();
+    }
+
+    try {
+      const { qualifyFile } = await import('../../ai/qualifier.mjs');
+      const { loadKnowledge } = await import('../../knowledge/loader.mjs');
+
+      await loadKnowledge();
+
+      send('start', { total: deadFiles.length });
+
+      const results = [];
+      const maxFiles = Math.min(deadFiles.length, limit);
+
+      for (let i = 0; i < maxFiles; i++) {
+        const file = deadFiles[i];
+        send('progress', {
+          current: i + 1,
+          total: maxFiles,
+          file: file.path
+        });
+
+        try {
+          const result = await qualifyFile(file, { projectPath });
+          results.push({ ...file, ...result });
+          send('qualified', { index: i, result });
+        } catch (err) {
+          send('error', { index: i, error: err.message });
+          results.push({ ...file, error: err.message });
+        }
+      }
+
+      send('complete', { message: 'Qualification complete', results });
+    } catch (error) {
+      send('error', { error: error.message });
+    }
+
+    res.end();
+  });
+
   // === Settings (minimal) ===
 
   router.get('/settings', (req, res) => {
