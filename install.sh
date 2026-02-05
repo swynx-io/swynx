@@ -14,7 +14,7 @@ NC='\033[0m'
 
 REPO="swynx-io/swynx"
 INSTALL_DIR="${SWYNX_INSTALL_DIR:-$HOME/.swynx}"
-AI_MODEL="qwen2.5-coder:3b"
+AI_MODEL="qwen2.5-coder:1.5b"
 DASHBOARD_PORT="${SWYNX_PORT:-8999}"
 
 print_banner() {
@@ -157,17 +157,11 @@ install_ai_engine() {
   # Download and warm model in background - don't block install
   if command -v ollama &> /dev/null; then
     if ! ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
-      echo "  AI model will download in background (~1.8GB)"
+      echo "  AI model will download in background (~900MB)"
       (ollama pull "$AI_MODEL" > /dev/null 2>&1 && \
-       ollama create swynx-deadcode -f "$INSTALL_DIR/src/ai/Modelfile" > /dev/null 2>&1 && \
-       curl -s --max-time 120 http://127.0.0.1:11434/api/generate -d '{"model":"swynx-deadcode","prompt":"hi","stream":false}' > /dev/null 2>&1) &
+       ollama create swynx-deadcode -f "$INSTALL_DIR/src/ai/Modelfile" > /dev/null 2>&1) &
     elif ! ollama list 2>/dev/null | grep -q "swynx-deadcode"; then
-      # Base model exists but custom model not created yet
-      (ollama create swynx-deadcode -f "$INSTALL_DIR/src/ai/Modelfile" > /dev/null 2>&1 && \
-       curl -s --max-time 60 http://127.0.0.1:11434/api/generate -d '{"model":"swynx-deadcode","prompt":"hi","stream":false}' > /dev/null 2>&1) &
-    else
-      # Both models exist, just warm it in background
-      (curl -s --max-time 60 http://127.0.0.1:11434/api/generate -d '{"model":"swynx-deadcode","prompt":"hi","stream":false}' > /dev/null 2>&1) &
+      (ollama create swynx-deadcode -f "$INSTALL_DIR/src/ai/Modelfile" > /dev/null 2>&1) &
     fi
     echo -e "${GREEN}✓ AI engine starting in background${NC}"
   else
