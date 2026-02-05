@@ -1281,5 +1281,5 @@ function extractGemEntryPoints(projectPath) {
   return entryPoints;
 }
 
-export default { scan };
-export { scan as scanProject } from "./index.mjs";
+export default scan;
+export { scan as scanProject };
