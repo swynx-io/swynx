@@ -444,8 +444,10 @@ export async function createRoutes() {
   }
 
   function parseLicenseKey(key) {
-    // Format: PREFIX-XXXX-XXXX-XXXX-XXXX
-    const match = key.match(/^(SWYX|TRIAL)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
+    // Format: PREFIX-XXXX-XXXX-XXXX-XXXX (case-insensitive)
+    if (!key || typeof key !== 'string') return null;
+    const normalized = key.trim().toUpperCase();
+    const match = normalized.match(/^(SWYX|TRIAL)-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})-([A-Z0-9]{4})$/);
     if (!match) return null;
     const prefix = match[1];
     return {

@@ -60,6 +60,7 @@ export async function startDashboard(options = {}) {
 
   // Middleware
   app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   // API routes
   const { createRoutes } = await import('./api/routes.mjs');
