@@ -60,8 +60,9 @@ const ENTRY_POINT_PATTERNS = [
   // Tests (multi-language)
   /\/tests?\//, /^tests?\//,
   /\/e2e\//, /__checks__\//,
-  // Examples
+  // Examples and samples
   /\/examples?\//, /^examples?\//,
+  /\/samples(-dev)?\//, /^samples(-dev)?\//,
   // Dynamic loading directories
   /\/composables?\//, /\/stores\//, /\/routers?\//,
   // Enterprise modules & backend modules
