@@ -2526,9 +2526,19 @@ export async function createRoutes() {
 
       // Categorise licenses by risk
       const riskCategories = {
-        high: ['GPL', 'AGPL', 'LGPL', 'SSPL', 'CC-BY-NC', 'CC-BY-ND'],
-        medium: ['MPL', 'EPL', 'CDDL', 'EUPL', 'OSL'],
-        low: ['MIT', 'ISC', 'BSD', 'Apache', 'Unlicense', 'CC0', 'WTFPL', '0BSD']
+        high: ['GPL', 'AGPL', 'LGPL', 'SSPL', 'CC-BY-NC', 'CC-BY-ND', 'OSL', 'SLEEPYCAT', 'WATCOM', 'RPL', 'QPL'],
+        medium: ['MPL', 'EPL', 'EUPL', 'CDDL', 'CPL', 'IPL', 'MS-RL', 'CECILL', 'APSL', 'CPAL', 'CC-BY-SA', 'ELASTIC', 'BSL'],
+        low: ['MIT', 'ISC', 'BSD', 'Apache', 'Unlicense', 'CC0', 'WTFPL', '0BSD',
+              'ZLIB', 'PSF', 'PYTHON', 'ARTISTIC', 'PERL', 'RUBY', 'BLUEOAK',
+              'CC-BY-3', 'CC-BY-4', 'AFL', 'MS-PL', 'MULANPSL',
+              'NCSA', 'UPL', 'SAX-PD', 'UNICODE', 'X11', 'CURL',
+              'JSON', 'LIBPNG', 'LIBTIFF', 'OFL', 'SIL', 'OPENSSL',
+              'PHP', 'POSTGRE', 'FAIR', 'W3C', 'ZOPE', 'ECL', 'EDL',
+              'NAUMEN', 'MULTICS', 'BOOST', 'BST', 'PUBLIC DOMAIN',
+              'PUBLICDOMAIN', 'AAL', 'SIMPL', 'LATEX', 'LPPL', 'HPND',
+              'NTP', 'POSTGRESQL', 'SENDMAIL', 'TCL', 'VIM', 'VOL',
+              'FTL', 'FSFAP', 'ICU', 'LIBTOOL', 'MINPACK', 'SMLNJ',
+              'SPENCER', 'BEERWARE', 'DWTFYWTPL']
       };
 
       const categorised = {
