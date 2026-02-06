@@ -32,6 +32,9 @@ function getGitSubmodulePaths(projectPath) {
 
 const DEFAULT_EXCLUDE = [
   '**/node_modules/**',
+  '**/bower_components/**',
+  '**/jspm_packages/**',
+  '**/web_modules/**',
   '**/.git/**',
   '**/dist/**',
   '**/build/**',
@@ -39,6 +42,9 @@ const DEFAULT_EXCLUDE = [
   '**/coverage/**',
   '**/*.min.js',
   '**/*.min.css',
+  // Vendored third-party code
+  '**/third_party/**',
+  '**/3rdparty/**',
   // Exclude log directories and files (can be huge, not code)
   '**/logs/**',
   '**/log/**',
@@ -119,10 +125,10 @@ export async function discoverFiles(projectPath, options = {}) {
       }
 
       processed++;
-      // Report progress every 2 files to give more frequent updates
-      if (processed % 2 === 0 || processed === total) {
+      // Report progress every 500 files (was every 2 — 50K setImmediate calls for 100K files)
+      if (processed % 500 === 0 || processed === total) {
         onProgress({ current: processed, total, file: match });
-        // Yield to event loop every 2 files to allow heartbeat to fire
+        // Yield to event loop to allow heartbeat to fire
         await new Promise(resolve => setImmediate(resolve));
       }
     }

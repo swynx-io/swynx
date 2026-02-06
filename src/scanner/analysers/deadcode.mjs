@@ -17,6 +17,10 @@ let _nestedPackageCache = null;
 let _nestedPackageCacheProjectPath = null;
 let _dependedPackagesCache = null;
 
+// Cache for extractPathAliases results (keyed by projectPath)
+let _pathAliasesCache = null;
+let _pathAliasesCacheProjectPath = null;
+
 /**
  * Find all nested package.json files in a project (for monorepo support)
  * Returns a map of package directory -> package.json contents
@@ -266,6 +270,11 @@ function _collectAllExportPaths(target, paths = new Set()) {
 }
 
 function extractPathAliases(projectPath) {
+  // Return cached result if available for same projectPath
+  if (_pathAliasesCacheProjectPath === projectPath && _pathAliasesCache) {
+    return _pathAliasesCache;
+  }
+
   const aliases = new Map();  // Global aliases (from root)
   const packageAliases = new Map();  // Per-package aliases: packageDir -> Map<alias, target>
 
@@ -876,7 +885,10 @@ function extractPathAliases(projectPath) {
     }
   } catch {}
 
-  return { aliases, packageAliases, packageBaseUrls, workspacePackages, goModulePath, javaSourceRoots };
+  const result = { aliases, packageAliases, packageBaseUrls, workspacePackages, goModulePath, javaSourceRoots };
+  _pathAliasesCache = result;
+  _pathAliasesCacheProjectPath = projectPath;
+  return result;
 }
 
 // Handle both ESM and CJS default exports from @babel/traverse
@@ -1336,9 +1348,9 @@ const ENTRY_POINT_PATTERNS = [
   /^(index|main|server|app|init|router)\.([mc]?[jt]s|[jt]sx)$/,
   /^src\/(index|main|server|app|init|router)\.([mc]?[jt]s|[jt]sx)$/,
   // Client/server split - flat structure (server/index.ts, api/index.ts, functions/index.ts)
-  /^(client|server|api|backend|functions|lambda|worker|workers|services|core|lib|app|web|middleware)\/(?:index|main|app|handler)\.([mc]?[jt]s|[jt]sx)$/,
+  /^(client|server|api|backend|functions|lambda|worker|workers|services|core|lib|app|web|middleware|source)\/(?:index|main|app|handler)\.([mc]?[jt]s|[jt]sx)$/,
   // Client/server split - with src subdirectory (server/src/index.ts)
-  /^(client|server|api|backend|functions|lambda|services|core|lib|app|web)\/src\/(index|main|server|app|handler)\.([mc]?[jt]s|[jt]sx)$/,
+  /^(client|server|api|backend|functions|lambda|services|core|lib|app|web|source)\/src\/(index|main|server|app|handler)\.([mc]?[jt]s|[jt]sx)$/,
   // CLI and scripts (bin/cli.ts, cli/index.ts, commands/serve.ts)
   /^(bin|cli|commands|scripts)\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
   // Background jobs and tasks (jobs/cleanup.ts, cron/daily.ts, queues/email.ts)
@@ -1364,14 +1376,16 @@ const ENTRY_POINT_PATTERNS = [
   // Libs directory pattern (libs/*/src/index.ts)
   /^libs\/[^/]+\/src\/(index|main)\.([mc]?[jt]s|[jt]sx)$/,
 
-  // Config files (vite.config.ts, postcss.config.cjs, jest.config.mjs, jest.config.cli.js etc.)
-  /\.(config|rc)(\.\w+)*\.([mc]?[jt]s|json)$/,
+  // Config files (vite.config.ts, postcss.config.cjs, jest.config.mjs, jest.config.cli.js, karma.conf.js etc.)
+  /\.(config|rc|conf)(\.\w+)*\.([mc]?[jt]s|json)$/,
   /^\..*rc\.[mc]?js$/,
 
-  // TypeScript declaration files (.d.ts) - ambient type definitions used by compiler
-  /\.d\.ts$/,
+  // TypeScript declaration files (.d.ts/.d.cts/.d.mts) - ambient type definitions used by compiler
+  /\.d\.ts$/, /\.d\.cts$/, /\.d\.mts$/,
   /shims-.*\.d\.ts$/,    // Vue shims (shims-vue.d.ts, shims-modules.d.ts)
   /env\.d\.ts$/,         // Vite environment declarations
+  // Flow type stubs (ambient type definitions for Flow, not imported)
+  /flow-typed\//,
 
   // Template/scaffold directories (copied at runtime, not imported)
   /\/templates?\//,
@@ -1387,8 +1401,9 @@ const ENTRY_POINT_PATTERNS = [
   // Jest transform files (fileTransformer.js etc.)
   /[Tt]ransformer\.([mc]?[jt]s|[jt]sx)$/,
 
-  // Gulpfile (task runner entry point)
+  // Gulpfile and Gruntfile (task runner entry points)
   /gulpfile\.([mc]?[jt]s|[jt]sx|js)$/,
+  /[Gg]runtfile\.([mc]?[jt]s|[jt]sx|js|coffee)$/,
 
   // === Test Files and Utilities ===
   // Match test/spec files by suffix (actual test files)
@@ -1424,14 +1439,19 @@ const ENTRY_POINT_PATTERNS = [
   // All files directly in tests/ directories (with 's' - more likely to be test runner dirs)
   /\/tests\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
   /^tests\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
+  // Root-level test/ (singular) at depth 1 — many libraries (express, ky, etc.)
+  // put test files directly in test/ without nesting
+  /^test\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
   // Standalone test.ts/test.js files (Prisma functional test pattern)
   /\/test\.([mc]?[jt]s|[jt]sx)$/,
   // test-utils files (test helper modules loaded by test runners)
   /test-utils\.([mc]?[jt]s|[jt]sx)$/,
   // Root-level vitest/jest setup files (vitest.setup.ts, jest.setup.js)
   /^(vitest|jest)\.setup\.([mc]?[jt]s|[jt]sx)$/,
-  // Package-level jest/vitest setup files
-  /(vitest|jest)\.setup\.([mc]?[jt]s|[jt]sx)$/,
+  // Package-level jest/vitest setup files (any nesting level, various naming conventions)
+  /(vitest|jest)[.\-]setup[^/]*\.([mc]?[jt]s|[jt]sx)$/,
+  // Vitest setup with custom names (vitest-setup-client.ts, tests-setup.ts)
+  /[.\-]setup[.\-](client|server|env|dom|after-env)\.([mc]?[jt]s|[jt]sx)$/,
   // API test utility packages (test helpers loaded by test runners)
   /api-tests?\//,
   // Playwright test directories (loaded by playwright.config.ts)
@@ -1495,6 +1515,24 @@ const ENTRY_POINT_PATTERNS = [
   /\/out\//,
   /^out\//,
   /\.min\.js$/,
+
+  // Platform build entry points (Cloudflare Workers, browser builds, etc.)
+  // builds/browser.ts, builds/node.ts, builds/worker.ts - compiled separately by build tool
+  /\/builds\/[^/]+\.[mc]?[jt]sx?$/,
+
+  // Polyfill/shim directories (loaded via build config, not imports)
+  /\/polyfills?\//,
+  /^polyfills?\//,
+  /\/shims?\//,
+  /^shims?\//,
+  /__shims__\//,
+
+  // Middleware convention (Next.js middleware.ts at root or app level)
+  /^(src\/)?middleware\.[mc]?[jt]sx?$/,
+  /^apps\/[^/]+\/(src\/)?middleware\.[mc]?[jt]sx?$/,
+
+  // Protobuf/gRPC generated files
+  /\.(pb|pb2|proto)\.(go|py|js|ts)$/,
 
   // Next.js / Remix / etc - file-based routing
   // Match pages/app/routes at project root, under src/, or in monorepo workspace packages
@@ -1585,6 +1623,16 @@ const ENTRY_POINT_PATTERNS = [
   // Database seed files (named seed-*.ts, *-seed.ts, *.seed.ts)
   /seed[.-][^/]+\.([mc]?[jt]s|[jt]sx)$/,
 
+  // Locale/i18n files (loaded dynamically by locale name)
+  /\/locale\//, /^locale\//, /\/locales\//, /^locales\//,
+  /\/i18n\//, /^i18n\//, /\/l10n\//, /^l10n\//,
+
+  // Type-checking test files (tsd, vitest typecheck, type-fest test-d/)
+  /\/test-d\//, /^test-d\//,
+
+  // ESM build outputs (parallel to src/, compiled by build tool)
+  /^esm\//, /\/esm\//,
+
   // Example/demo/sample/sandbox directories (reference implementations, not imported)
   /\/examples?\//,
   /^examples?\//,
@@ -1649,6 +1697,7 @@ const ENTRY_POINT_PATTERNS = [
   /\/plugins?\//,
   /\/extensions?\//,
   /\/addons?\//,
+  /^addons?\//,
   /\/integrations?\//,
   /^integrations?\//,
   /\/connectors?\//,
@@ -1729,8 +1778,18 @@ const ENTRY_POINT_PATTERNS = [
   /tasks\.py$/,
   /celery\.py$/,
   /celeryconfig\.py$/,
+  // Python type stubs (.pyi) - declarations consumed by type checkers, not via imports
+  /\.pyi$/,
+  // Typeshed directory (Python type stubs collection used by mypy, pyright, etc.)
+  /typeshed\//,
+  // Python package setup (build entry points, not imported)
+  /setup\.py$/,
+  /setup\.cfg$/,
 
   // === Java/Kotlin Entry Points ===
+  // Java/Kotlin files in test/ directories (test fixtures, resources, transformation tests)
+  /\/test\/.*\.(java|kt)$/,
+  /^test\/.*\.(java|kt)$/,
   // Spring Boot - only definitive entry points by file name
   /Application\.(java|kt)$/,
   /.*Application\.(java|kt)$/,
@@ -1777,7 +1836,155 @@ const ENTRY_POINT_PATTERNS = [
   // === Rust Entry Points ===
   /main\.rs$/,
   /lib\.rs$/,
-  /mod\.rs$/
+  /mod\.rs$/,
+  // Rust build/config files
+  /Cargo\.toml$/, /build\.rs$/,
+  // Rust bench/example/fuzz targets
+  /benches\/.*\.rs$/, /examples\/.*\.rs$/,
+  /\/fuzz_targets\/[^/]+\.rs$/,
+  // Rust inline module submodule directories (loaded via mod declarations)
+  /\/handlers\/[^/]+\.rs$/,
+  /\/imports\/[^/]+\.rs$/,
+  /\/syntax_helpers\/[^/]+\.rs$/,
+  /\/completions\/[^/]+\.rs$/,
+  /\/tracing\/[^/]+\.rs$/,
+  /\/toolchain_info\/[^/]+\.rs$/,
+
+  // === PHP Entry Points ===
+  /index\.php$/, /artisan$/,
+  /composer\.json$/,
+  /app\/Http\/Controllers\//, /app\/Models\//, /app\/Providers\//,
+  /routes\/web\.php$/, /routes\/api\.php$/,
+  /database\/migrations\//, /database\/seeders\//,
+  /config\/.*\.php$/, /resources\/views\//,
+
+  // === Ruby Entry Points ===
+  /config\.ru$/, /Rakefile$/, /Gemfile$/,
+  /\/homebrew\//, /^homebrew\//,
+  /config\/initializers\//, /config\/environments\//,
+  /db\/post_migrate\//, /db\/migrate\//,
+  /app\/controllers\//, /app\/models\//, /app\/helpers\//,
+  /app\/jobs\//, /app\/mailers\//, /app\/views\//,
+  /config\/routes\.rb$/, /config\/application\.rb$/,
+  /db\/seeds\.rb$/,
+  /lib\/tasks\/.*\.rake$/,
+  /spec\/.*_spec\.rb$/, /test\/.*_test\.rb$/,
+
+  // === Elixir Entry Points ===
+  /mix\.exs$/, /config\/.*\.exs$/,
+
+  // === Haskell Entry Points ===
+  /\.cabal$/, /stack\.yaml$/, /Setup\.hs$/,
+
+  // === Nim Entry Points ===
+  /\.nimble$/,
+
+  // === Zig Entry Points ===
+  /build\.zig$/, /\.zig$/,
+
+  // === Build Config Files ===
+  /build\.gradle(\.kts)?$/, /settings\.gradle(\.kts)?$/,
+  /\/buildSrc\//, /^buildSrc\//,
+  /gradle\/.*\.gradle(\.kts)?$/,
+  /Jenkinsfile$/,
+  /Makefile$/, /makefile$/, /CMakeLists\.txt$/,
+
+  // === C/C++ Native Extension Sources ===
+  /\/src\/.*\.(c|cpp|h|hpp)$/, /\/_core\/.*\.(c|cpp|h|hpp)$/,
+  /\/code_generators\//, /\/include\/.*\.(h|hpp)$/,
+
+  // === CI Config Files ===
+  /dangerfile\.[jt]s$/,
+
+  // === Cypress Component Tests ===
+  /\.cy\.[jt]sx?$/,
+
+  // === Unit Test Files ===
+  /\.unit\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Visual Testing ===
+  /\/chromatic\//, /^chromatic\//,
+
+  // === Kubernetes/Deployment Patterns ===
+  /\/hack\//, /^hack\//,
+  /\/cluster\//, /^cluster\//,
+  /\/staging\//, /^staging\//,
+
+  // === Performance/Smoke Testing ===
+  /smoke-test/, /performance-test/,
+
+  // === Deprecated Packages ===
+  /deprecated-packages?\//, /\/deprecated\//,
+
+  // === Additional Test Directories ===
+  /e2e-tests?\//, /\/intTest\//, /^intTest\//,
+  /\/specs?\//, /^specs?\//,
+
+  // === Broader Serverless Patterns ===
+  /\/netlify\//, /^netlify\//,
+  /\/vercel\//, /^vercel\//,
+  /\/lambda\//, /^lambda\//,
+  /\/functions\//, /^functions\//,
+
+  // === Broader Codemod Patterns ===
+  /-codemod\//, /codemod/,
+
+  // === Internal Build Directories ===
+  /\/cache-dir\//, /\/internal-plugins\//,
+
+  // === Frontend Static/App Directories (Webpack/Vite) ===
+  /\/static\/app\//, /^static\/app\//,
+  /\/static\/gs/, /^static\/gs/,
+
+  // === Ember.js Frontend Convention ===
+  /frontend\/[^/]+\/app\//, /frontend\/discourse/,
+
+  // === Icon and Illustration Libraries ===
+  /\/icons?\//, /-icons-/, /icons-material/,
+  /\/illustrations?\//, /spectrum-illustrations/,
+
+  // === Recipe/Documentation Directories ===
+  /\/recipes\//, /^recipes\//,
+
+  // === Scoped Package Entries ===
+  /^packages\/@[^/]+\/[^/]+\/src\/(index|main)\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Dynamic Module Loaders (CodeMirror, Editors, Syntax Highlighters) ===
+  /\/mode\/[^/]+\.js$/, /\/modes?\//, /^modes?\//,
+  /\/languages?\/[^/]+\.(js|ts)$/, /\/lang\//, /^lang\//,
+  /\/themes?\//, /^themes?\//,
+  /\/grammars?\//, /^grammars?\//,
+  /\/keymaps?\//, /^keymaps?\//,
+
+  // === Documentation/Debug/Tools ===
+  /\/docs?\//, /^docs?\//, /-docs\//, /_docs\//,
+  /\/documentation\//, /^documentation\//,
+  /\/debug\//, /^debug\//,
+  /\/tools\//, /^tools\//,
+
+  // === Modules Directory ===
+  /\/modules?\//,
+
+  // === Generated Code ===
+  /\/@generated\//, /\/_generated\//, /\/generated\//,
+
+  // === Containers (Docker/test infrastructure) ===
+  /\/containers\//,
+
+  // === Meteor Package Files ===
+  /\/meteor\//, /^meteor\//,
+
+  // === Post-Build Scripts ===
+  /^post[a-z]+\.(c|m)?js$/, /\/post[a-z]+\.(c|m)?js$/,
+
+  // === Test Data ===
+  /\/test_data\//, /\/test-data\//, /\/testdata\//,
+
+  // === Reporters ===
+  /\/reporters\//,
+
+  // === Server-side Rendering ===
+  /\/server\//, /^server\//
 ];
 
 /**
@@ -2884,6 +3091,7 @@ function isCodeFile(path) {
 function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, additionalRefs = null) {
   const reachable = new Set();
   const visited = new Set();
+  const _sortedAliasCache = new WeakMap();  // Cache sorted alias arrays per alias Map
 
   // Extract path aliases from tsconfig.json / vite.config.ts
   // Returns global aliases, per-package aliases, baseUrls, and workspace package mapping for monorepo support
@@ -3043,9 +3251,41 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
     filePathsNoExt.get(noExt).push(filePath);
   }
 
+  // Build indexes for O(1) lookups (replaces O(n) scans)
+
+  // A2: Go same-package linking index: Map<dir, string[]> of .go files per directory
+  const goFilesByDir = new Map();
+  // A3: Suffix index for findMatchingFiles: Map<suffix, string[]> for partial path matching
+  const suffixIndex = new Map();
+  // A5: Directory index for sibling detection: Map<dir, string[]>
+  const dirIndex = new Map();
+
+  const allFilePaths = [...fileImports.keys()];
+  for (const fp of allFilePaths) {
+    // goFilesByDir: only Go files
+    if (fp.endsWith('.go')) {
+      const dir = dirname(fp);
+      let arr = goFilesByDir.get(dir);
+      if (!arr) { arr = []; goFilesByDir.set(dir, arr); }
+      arr.push(fp);
+    }
+
+    // suffixIndex: keyed by everything after the last '/'
+    const lastSlash = fp.lastIndexOf('/');
+    const suffix = lastSlash >= 0 ? fp.slice(lastSlash + 1) : fp;
+    let sarr = suffixIndex.get(suffix);
+    if (!sarr) { sarr = []; suffixIndex.set(suffix, sarr); }
+    sarr.push(fp);
+
+    // dirIndex: group files by their directory
+    const dir = dirname(fp);
+    let darr = dirIndex.get(dir);
+    if (!darr) { darr = []; dirIndex.set(dir, darr); }
+    darr.push(fp);
+  }
+
   // Mark files matching glob patterns from source as reachable
   // (e.g., glob.sync('**/*.node.ts'), import.meta.glob('**/*.ts'))
-  const allFilePaths = [...fileImports.keys()];
   for (const file of jsAnalysis) {
     const fileDir = dirname(file.file?.relativePath || '');
     for (const imp of file.imports || []) {
@@ -3075,11 +3315,10 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
         const fullPath = join(projectPath, filePath);
         const source = readFileSync(fullPath, 'utf-8');
         if (dirScanPatterns.test(source)) {
-          // Mark all sibling files in the same directory as reachable
-          for (const otherFile of allFilePaths) {
-            if (otherFile === filePath) continue;
-            const otherDir = dirname(otherFile);
-            if (otherDir === fileDir) {
+          // Mark all sibling files in the same directory as reachable (using dirIndex for O(1))
+          const siblings = dirIndex.get(fileDir) || [];
+          for (const otherFile of siblings) {
+            if (otherFile !== filePath) {
               reachable.add(otherFile);
             }
           }
@@ -3111,8 +3350,11 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
           matches.push(lowerPath);
         }
       }
-      // Also scan all file paths for partial match (with proper path boundary)
-      for (const filePath of fileImports.keys()) {
+      // Use suffix index for O(1) partial match lookup (instead of O(n) scan)
+      // Look up by the filename portion of fullPath (after last /)
+      const fullPathBasename = fullPath.includes('/') ? fullPath.slice(fullPath.lastIndexOf('/') + 1) : fullPath;
+      const candidates = suffixIndex.get(fullPathBasename) || [];
+      for (const filePath of candidates) {
         // Only match if fullPath is at a path boundary (after / or at start)
         // Avoid matching 'dead_tasks.py' when looking for 'tasks.py'
         if (filePath.endsWith('/' + fullPath) || filePath === fullPath) {
@@ -3370,7 +3612,12 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
       const fileAliases = getAliasesForFile(fromFile);
       let aliasResolved = false;
       // Sort aliases by length (longest first) so '@site/' matches before '@/'
-      const sortedAliases = [...fileAliases.entries()].sort((a, b) => b[0].length - a[0].length);
+      // Use cached sorted array to avoid re-sorting on every resolveImport call
+      let sortedAliases = _sortedAliasCache.get(fileAliases);
+      if (!sortedAliases) {
+        sortedAliases = [...fileAliases.entries()].sort((a, b) => b[0].length - a[0].length);
+        _sortedAliasCache.set(fileAliases, sortedAliases);
+      }
       for (const [alias, target] of sortedAliases) {
         if (importPath.startsWith(alias)) {
           // Replace alias with target path and normalize double slashes
@@ -3547,9 +3794,10 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
   // BFS to find all reachable files
   function walkFromFile(startFile) {
     const queue = [startFile];
+    let qi = 0;
 
-    while (queue.length > 0) {
-      const current = queue.shift();
+    while (qi < queue.length) {
+      const current = queue[qi++];
 
       if (visited.has(current)) continue;
       visited.add(current);
@@ -3561,10 +3809,10 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
       if (current.endsWith('.go')) {
         const currentDir = dirname(current);
         const deadGoPattern = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)[^/]*\.go$|\/dead\.go$/i;
-        for (const filePath of fileImports.keys()) {
-          if (filePath.endsWith('.go') && !visited.has(filePath) && !deadGoPattern.test(filePath)) {
-            const fileDir = dirname(filePath);
-            if (fileDir === currentDir) {
+        const sameDir = goFilesByDir.get(currentDir);
+        if (sameDir) {
+          for (const filePath of sameDir) {
+            if (!visited.has(filePath) && !deadGoPattern.test(filePath)) {
               queue.push(filePath);
             }
           }
@@ -3679,24 +3927,48 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
     }
   }
 
-  // Start from each entry point
+  // Start from each entry point using lookup maps instead of O(entryPoints × files)
+  // Build a Set of all known file paths for exact matching
+  const allFilePathSet = new Set(allFilePaths);
   for (const entryPoint of entryPointFiles) {
-    // Find the actual file path that matches this entry point
-    for (const file of jsAnalysis) {
-      const filePath = file.file?.relativePath || file.file;
-      // Support all code file extensions
-      const fileNoExt = filePath.replace(/\.([mc]?[jt]s|[jt]sx|py|pyi|java|kt|kts|cs|go|rs)$/, '');
-      const entryNoExt = entryPoint.replace(/\.([mc]?[jt]s|[jt]sx|py|pyi|java|kt|kts|cs|go|rs)$/, '');
+    // 1. Exact path match
+    if (allFilePathSet.has(entryPoint)) {
+      walkFromFile(entryPoint);
+      continue;
+    }
 
-      if (filePath === entryPoint ||
-          fileNoExt === entryNoExt ||
-          filePath.endsWith('/' + entryPoint) ||
-          filePath.endsWith('/' + entryNoExt + '.tsx') ||
-          filePath.endsWith('/' + entryNoExt + '.ts') ||
-          filePath.endsWith('/' + entryNoExt + '.jsx') ||
-          filePath.endsWith('/' + entryNoExt + '.js')) {
-        walkFromFile(filePath);
+    // 2. Extension-less match via filePathsNoExt
+    const entryNoExt = entryPoint.replace(/\.([mc]?[jt]s|[jt]sx|py|pyi|java|kt|kts|cs|go|rs)$/, '');
+    const noExtMatches = filePathsNoExt.get(entryNoExt);
+    if (noExtMatches) {
+      for (const fp of noExtMatches) walkFromFile(fp);
+      continue;
+    }
+
+    // 3. Suffix-based fallback for entries like "src/index.ts" matching "packages/foo/src/index.ts"
+    const entryBasename = entryPoint.includes('/') ? entryPoint.slice(entryPoint.lastIndexOf('/') + 1) : entryPoint;
+    const entryNoExtBasename = entryNoExt.includes('/') ? entryNoExt.slice(entryNoExt.lastIndexOf('/') + 1) : entryNoExt;
+    let found = false;
+    // Try exact suffix match
+    const suffixCandidates = suffixIndex.get(entryBasename) || [];
+    for (const fp of suffixCandidates) {
+      if (fp.endsWith('/' + entryPoint) || fp === entryPoint) {
+        walkFromFile(fp);
+        found = true;
       }
+    }
+    if (found) continue;
+    // Try extension variants via suffix index
+    for (const ext of ['.tsx', '.ts', '.jsx', '.js']) {
+      const variantBasename = entryNoExtBasename + ext;
+      const variants = suffixIndex.get(variantBasename) || [];
+      for (const fp of variants) {
+        if (fp.endsWith('/' + entryNoExt + ext)) {
+          walkFromFile(fp);
+          found = true;
+        }
+      }
+      if (found) break;
     }
   }
 
@@ -3850,9 +4122,6 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // Collect all entry point file paths for reachability analysis
   const entryPointFiles = new Set([...scriptEntryPoints, ...nestedScriptEntryPoints, ...htmlEntryPoints, ...viteReplacementEntryPoints, ...configEntryPoints]);
 
-  // Build a map of what files are imported (for backwards compatibility)
-  const importedBy = buildImportedByMap(analysisFiles);
-
   // Build map of class names to files (for DI container reference detection)
   const classToFile = new Map();
   for (const file of analysisFiles) {
@@ -3864,10 +4133,20 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     }
   }
 
+  // B2: Helper to get file content — re-reads from disk if content was stripped by worker
+  function _getContent(file) {
+    if (file.content) return file.content;
+    if (!projectPath) return '';
+    const filePath = file.file?.relativePath || file.file;
+    try { return readFileSync(join(projectPath, filePath), 'utf-8'); } catch { return ''; }
+  }
+
   // Collect all class names referenced via DI container patterns (Container.get, etc.)
+  // Only files with classes need DI scanning (skip the majority)
   const diReferencedClasses = new Set();
   for (const file of analysisFiles) {
-    const content = file.content || '';
+    if (!file.classes?.length) continue;  // Only scan files that have classes
+    const content = _getContent(file);
     const refs = extractDIContainerReferences(content);
     for (const className of refs) {
       diReferencedClasses.add(className);
@@ -3894,7 +4173,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   const csharpFileRefs = new Map();
   for (const file of analysisFiles) {
     const filePath = file.file?.relativePath || file.file;
-    const content = file.content || '';
+    // B2: Only re-read content for .cs files (C# analysis), not all files
+    const content = filePath.endsWith('.cs') ? _getContent(file) : '';
 
     // Detect C# class references
     if (filePath.endsWith('.cs')) {
@@ -3922,6 +4202,13 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
         csharpFileRefs.set(filePath, refs);
       }
     }
+  }
+
+  // A10: Free content strings from parsed files — DI/C# analysis above is the last consumer.
+  // Content will be re-read from disk only for dead files (small subset) below.
+  // This frees ~250MB (50K × 5KB) from the heap mid-pipeline.
+  for (const file of analysisFiles) {
+    file.content = null;
   }
 
   // First pass: identify all entry points
@@ -4236,10 +4523,18 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     }
 
     // File is NOT reachable from any entry point - it's a dead file
-    const content = file.content || '';
+    // Content was freed (A10) so re-read from disk for the small subset of dead files
+    let content = file.content || '';
+    if (!content && projectPath) {
+      try { content = readFileSync(join(projectPath, filePath), 'utf-8'); } catch { /* skip */ }
+    }
     if (!content) continue;
 
-    const gitHistory = getFileGitHistory(filePath, projectPath);
+    // A8: Skip git history when there are many dead files (>200) to avoid thousands of subprocess forks
+    // Only fetch git history for the first 200 dead files (sorted by size later)
+    const gitHistory = results.fullyDeadFiles.length < 200
+      ? getFileGitHistory(filePath, projectPath)
+      : { available: false, reason: 'Skipped for performance (>200 dead files)' };
     const sizeBytes = file.size || content.length;
     const cost = calculateDeadCodeCost(sizeBytes);
     const exports = parseExports(content, filePath);
@@ -4282,94 +4577,6 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   results.fullyDeadFiles.sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0));
 
   return results;
-}
-
-/**
- * Build a map of what files import what (reverse import graph)
- */
-function buildImportedByMap(jsAnalysis) {
-  const importedBy = new Map();
-
-  for (const file of jsAnalysis) {
-    const importerPath = file.file?.relativePath || file.file;
-
-    for (const imp of file.imports || []) {
-      const module = imp.module;
-
-      // Only track local imports (not npm packages)
-      if (module.startsWith('.') || module.startsWith('/')) {
-        const resolved = resolveImportPath(importerPath, module);
-
-        if (!importedBy.has(resolved)) {
-          importedBy.set(resolved, []);
-        }
-        importedBy.get(resolved).push({
-          file: importerPath,
-          line: imp.line,
-          importStatement: module
-        });
-
-        // Also add variants with different extensions
-        const variants = [
-          resolved,
-          resolved + '.js',
-          resolved + '.mjs',
-          resolved + '.cjs',
-          resolved + '.ts',
-          resolved + '.mts',
-          resolved + '.cts',
-          resolved + '.tsx',
-          resolved + '.jsx',
-          resolved + '/index.js',
-          resolved + '/index.ts',
-          resolved + '/index.mjs',
-          resolved + '/index.mts'
-        ];
-
-        for (const variant of variants) {
-          if (!importedBy.has(variant)) {
-            importedBy.set(variant, []);
-          }
-          if (!importedBy.get(variant).some(i => i.file === importerPath)) {
-            importedBy.get(variant).push({
-              file: importerPath,
-              line: imp.line,
-              importStatement: module
-            });
-          }
-        }
-      }
-    }
-  }
-
-  return importedBy;
-}
-
-/**
- * Resolve relative import to file path
- */
-function resolveImportPath(fromFile, importPath) {
-  const fromDir = dirname(fromFile);
-
-  let resolved = importPath;
-  // Handle bare "." import (import from ".") -> resolves to directory index
-  if (importPath === '.') {
-    resolved = fromDir || '.';
-  } else if (importPath.startsWith('./')) {
-    resolved = fromDir ? join(fromDir, importPath.slice(2)) : importPath.slice(2);
-  } else if (importPath.startsWith('../')) {
-    resolved = join(fromDir, importPath);
-  }
-
-  // Normalize path separators
-  resolved = resolved.replace(/\\/g, '/');
-
-  // Remove leading ./
-  if (resolved.startsWith('./')) {
-    resolved = resolved.slice(2);
-  }
-
-  return resolved;
 }
 
 /**

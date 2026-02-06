@@ -20,6 +20,7 @@ import { analyseAssetOptimisation, findUnusedAssets, enrichUnusedAsset, analyseA
 import { calculateEmissions } from '../emissions/index.mjs';
 import { applyRules } from '../rules/index.mjs';
 import { scanSecurityVulnerabilities, enrichVulnerability } from './analysers/security.mjs';
+import { scanCodePatterns, enrichDeadFileWithPatterns } from '../security/scanner.mjs';
 import { scanLicenses } from './analysers/licenses.mjs';
 import { scanOutdatedDependencies } from './analysers/outdated.mjs';
 import { analyseLogFiles } from './analysers/logs.mjs';
@@ -65,6 +66,9 @@ function parallelParse(files, parserType, onFileProgress, configWorkers) {
           progressTotal += msg.done - (worker._lastProgress || 0);
           worker._lastProgress = msg.done;
           if (onFileProgress) onFileProgress(progressTotal);
+        } else if (msg.type === 'batch') {
+          // B1: Handle batch messages from worker (intermediate results)
+          allResults.push(...msg.results);
         } else if (msg.type === 'done') {
           allResults.push(...msg.results);
           completed++;
@@ -103,7 +107,8 @@ const SCAN_PHASES = {
   DEPENDENCIES: { name: 'Analysing dependencies', weight: 10 },
   IMPORT_GRAPH: { name: 'Building import graph', weight: 10 },
   DEAD_CODE: { name: 'Detecting dead code', weight: 10 },
-  DUPLICATES: { name: 'Finding duplicate code', weight: 10 },
+  CODE_PATTERNS: { name: 'Scanning dead code patterns', weight: 3 },
+  DUPLICATES: { name: 'Finding duplicate code', weight: 7 },
   SECURITY: { name: 'Scanning security vulnerabilities', weight: 8 },
   LICENSES: { name: 'Checking license compliance', weight: 5 },
   OUTDATED: { name: 'Checking outdated packages', weight: 5 },
@@ -393,6 +398,37 @@ export async function scanProject(projectPath, config = {}) {
   console.error(`[STAGE] Dead code detection complete - ${deadFileCount} files with dead code`);
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // PHASE 7.5: Full Codebase Security Pattern Scan
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.error('[STAGE] Scanning all files for security patterns...');
+  reportPhase(SCAN_PHASES.CODE_PATTERNS.name, 'Checking CWE patterns across all files...');
+
+  // Build dead file set for isDead flagging
+  const deadFileSet = new Set([
+    ...(deadCode.fullyDeadFiles || []).map(f => f.relativePath || f.file || f.path || ''),
+    ...(deadCode.partiallyDeadFiles || []).map(f => f.relativePath || f.file || f.path || '')
+  ]);
+
+  const codePatterns = scanCodePatterns(allCodeAnalysis, deadFileSet, projectPath, ({ detail, current, total }) => {
+    reportPhase(SCAN_PHASES.CODE_PATTERNS.name, detail, current, total);
+  });
+
+  // Enrich dead files with per-file security pattern data
+  if (codePatterns.summary.totalFindings > 0) {
+    if (deadCode.fullyDeadFiles) {
+      deadCode.fullyDeadFiles = deadCode.fullyDeadFiles.map(f => enrichDeadFileWithPatterns(f, codePatterns.byFile));
+    }
+    if (deadCode.partiallyDeadFiles) {
+      deadCode.partiallyDeadFiles = deadCode.partiallyDeadFiles.map(f => enrichDeadFileWithPatterns(f, codePatterns.byFile));
+    }
+  }
+
+  advancePhase('CODE_PATTERNS');
+  const cpSum = codePatterns.summary;
+  reportPhase(SCAN_PHASES.CODE_PATTERNS.name, `Found ${cpSum.total} security patterns (${cpSum.inLiveCode} live, ${cpSum.inDeadCode} dead)`);
+  console.error(`[STAGE] Code pattern scan complete - ${cpSum.total} patterns (${cpSum.inLiveCode} live, ${cpSum.inDeadCode} dead)`);
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 8: Duplicate Detection
   // ═══════════════════════════════════════════════════════════════════════════
   console.error('[STAGE] Finding duplicate functions...');
@@ -595,7 +631,8 @@ export async function scanProject(projectPath, config = {}) {
     heavyDeps,
     bundles,
     assetOptimisation,
-    unusedAssets
+    unusedAssets,
+    codePatterns
   }, config.rules);
 
   // Add log file findings
@@ -622,7 +659,8 @@ export async function scanProject(projectPath, config = {}) {
     security,
     licenses,
     outdated,
-    emissions
+    emissions,
+    codePatterns
   });
 
   const duration = Date.now() - startTime;
@@ -669,6 +707,7 @@ export async function scanProject(projectPath, config = {}) {
 
     emissions,
     security,
+    codePatterns,
     licenses,
     outdated,
     costs,

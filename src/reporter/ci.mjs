@@ -452,7 +452,7 @@ export function formatCIOutput(result, options = {}) {
   // If passed, show compact view
   if (status.passed) {
     // ═══════════════════════════════════════════════════════════════════════════
-    // P.E.E.R. BREAKDOWN (compact, passing)
+    // SWYNX BREAKDOWN (compact, passing)
     // ═══════════════════════════════════════════════════════════════════════════
     const pBar = (s, m) => {
       const pct = (s / m) * 100;
@@ -470,7 +470,7 @@ export function formatCIOutput(result, options = {}) {
     const annualWaste = result.costs?.total?.annual || 0;
 
     lines.push('');
-    lines.push(...sectionBox('P.E.E.R. BREAKDOWN', [
+    lines.push(...sectionBox('SWYNX BREAKDOWN', [
       `Performance   ${pBar(pillarScores.performance.score, 25)}  ${pillarScores.performance.score}/${pillarScores.performance.max}   ${color('✓', COLORS.green)}`,
       `Emissions     ${pBar(pillarScores.emissions.score, 10)}  ${pillarScores.emissions.score}/${pillarScores.emissions.max}   ${color('✓', COLORS.green)}`,
       `Exposure      ${pBar(pillarScores.exposure.score, 40)}  ${pillarScores.exposure.score}/${pillarScores.exposure.max}   ${color('✓', COLORS.green)}`,
@@ -767,6 +767,68 @@ export function formatCIOutput(result, options = {}) {
 
       lines.push('');
       lines.push(...sectionBox('SECURITY VULNERABILITIES', vulnContent, `${allVulns.length} found`));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DETAILED: SECURITY PATTERNS (ALL CODE)
+    // ═══════════════════════════════════════════════════════════════════════════
+    const codePatterns = result.codePatterns;
+    if (codePatterns?.summary?.totalFindings > 0) {
+      const patternContent = [];
+      const cpSummary = codePatterns.summary;
+
+      patternContent.push(color('Security patterns found across codebase:', COLORS.bold));
+      patternContent.push(`Total: ${cpSummary.total || cpSummary.totalFindings}  |  In live code: ${cpSummary.inLiveCode || 0}  |  In dead code: ${cpSummary.inDeadCode || 0}`);
+      patternContent.push(`Critical: ${cpSummary.critical}  High: ${cpSummary.high}  Medium: ${cpSummary.medium}  Low: ${cpSummary.low}`);
+      patternContent.push('');
+
+      patternContent.push('Severity  CWE       Status  File                                   Line  Description');
+      patternContent.push('────────  ────────  ──────  ─────────────────────────────────────  ────  ─────────────────────');
+
+      const topFindings = codePatterns.findings.slice(0, 15);
+      for (const f of topFindings) {
+        const sev = f.severity.padEnd(8);
+        const cwe = f.cwe.padEnd(8);
+        const status = f.isDead ? 'DEAD  ' : color('LIVE  ', COLORS.yellow);
+        const file = (f.file || '').substring(0, 37).padEnd(37);
+        const line = String(f.line || 0).padStart(4);
+        const desc = (f.description || '').substring(0, 28);
+
+        const sevColored = f.severity === 'CRITICAL' ? color(sev, COLORS.red)
+          : f.severity === 'HIGH' ? color(sev, COLORS.yellow)
+          : sev;
+
+        patternContent.push(`${sevColored}  ${cwe}  ${status}  ${file}  ${line}  ${desc}`);
+      }
+
+      if (codePatterns.findings.length > 15) {
+        patternContent.push('');
+        patternContent.push(`... and ${codePatterns.findings.length - 15} more patterns`);
+      }
+
+      if (codePatterns.proximityAlerts.length > 0) {
+        patternContent.push('');
+        patternContent.push(color(`${codePatterns.proximityAlerts.length} files in security-critical directories:`, COLORS.yellow));
+        for (const alert of codePatterns.proximityAlerts.slice(0, 5)) {
+          const categories = alert.matches.map(m => m.category).join(', ');
+          const deadTag = alert.isDead ? ' [dead]' : '';
+          patternContent.push(`  ${alert.file}${deadTag}  (${categories})`);
+        }
+        if (codePatterns.proximityAlerts.length > 5) {
+          patternContent.push(`  ... and ${codePatterns.proximityAlerts.length - 5} more`);
+        }
+      }
+
+      patternContent.push('');
+      if ((cpSummary.inDeadCode || 0) > 0) {
+        patternContent.push(color('FIX:', COLORS.cyan) + ` Remove ${cpSummary.inDeadCode} dead code findings by deleting unused files`);
+      }
+      if ((cpSummary.inLiveCode || 0) > 0) {
+        patternContent.push(color('FIX:', COLORS.cyan) + ` Review and remediate ${cpSummary.inLiveCode} findings in live code`);
+      }
+
+      lines.push('');
+      lines.push(...sectionBox('SECURITY PATTERNS', patternContent, `${cpSummary.total || cpSummary.totalFindings} patterns`));
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

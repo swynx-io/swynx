@@ -143,7 +143,6 @@ export async function parseJavaScript(file) {
 
           // Recalculate size with full declaration
           func.sizeBytes = extractCodeSize(content, func.line, func.endLine);
-          func.body = extractCode(content, func.line, func.endLine);
 
           functions.push(func);
         }
@@ -205,7 +204,6 @@ export async function parseJavaScript(file) {
 
         classInfo.lineCount = classInfo.endLine - classInfo.line + 1;
         classInfo.sizeBytes = extractCodeSize(content, classInfo.line, classInfo.endLine);
-        classInfo.body = extractCode(content, classInfo.line, classInfo.endLine);
 
         // Extract methods
         if (node.body && node.body.body) {
@@ -224,7 +222,6 @@ export async function parseJavaScript(file) {
                 method.line = member.loc?.start?.line || 0;
                 method.endLine = member.loc?.end?.line || 0;
                 method.sizeBytes = extractCodeSize(content, method.line, method.endLine);
-                method.body = extractCode(content, method.line, method.endLine);
                 classInfo.methods.push(method);
                 functions.push(method);
               } else {
@@ -276,7 +273,6 @@ export async function parseJavaScript(file) {
           func.line = path.node.loc?.start?.line || func.line;
           func.endLine = path.node.loc?.end?.line || func.endLine;
           func.sizeBytes = extractCodeSize(content, func.line, func.endLine);
-          func.body = extractCode(content, func.line, func.endLine);
 
           functions.push(func);
         }
@@ -550,8 +546,7 @@ function extractFunctionInfo(node, content, type) {
     async: node.async || false,
     generator: node.generator || false,
     params: [],
-    signature: '',
-    body: ''
+    signature: ''
   };
 
   // Extract parameters
@@ -574,9 +569,8 @@ function extractFunctionInfo(node, content, type) {
   const genPrefix = info.generator ? '*' : '';
   info.signature = `${asyncPrefix}function${genPrefix} ${info.name}(${info.params.join(', ')})`;
 
-  // Extract actual code
-  info.body = extractCode(content, startLine, endLine);
-  info.sizeBytes = info.body.length;
+  // Compute size without storing full body (saves ~5GB on large repos)
+  info.sizeBytes = extractCodeSize(content, startLine, endLine);
 
   return info;
 }
@@ -612,8 +606,7 @@ function extractMethodInfo(node, content, className) {
     generator: node.generator || false,
     static: node.static || false,
     params: [],
-    signature: '',
-    body: ''
+    signature: ''
   };
 
   // Extract parameters
@@ -632,9 +625,8 @@ function extractMethodInfo(node, content, className) {
   const asyncPrefix = info.async ? 'async ' : '';
   info.signature = `${staticPrefix}${asyncPrefix}${name}(${info.params.join(', ')})`;
 
-  // Extract actual code
-  info.body = extractCode(content, startLine, endLine);
-  info.sizeBytes = info.body.length;
+  // Compute size without storing full body (saves ~5GB on large repos)
+  info.sizeBytes = extractCodeSize(content, startLine, endLine);
 
   return info;
 }
@@ -724,8 +716,7 @@ function parseWithRegex(filePath, relativePath, content, lines) {
             line: startLine,
             endLine,
             lineCount: endLine - startLine + 1,
-            sizeBytes: body.length,
-            body
+            sizeBytes: body.length
           });
         } else {
           functions.push({
@@ -735,8 +726,7 @@ function parseWithRegex(filePath, relativePath, content, lines) {
             endLine,
             lineCount: endLine - startLine + 1,
             sizeBytes: body.length,
-            signature: line.trim().replace(/\{.*$/, '').trim(),
-            body
+            signature: line.trim().replace(/\{.*$/, '').trim()
           });
         }
         break;

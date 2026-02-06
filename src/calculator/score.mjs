@@ -28,6 +28,37 @@ export function calculateHealthScore(scanResult) {
     deductions.push({ reason: 'High vulnerabilities', points: deduction });
   }
 
+  // Code security patterns deduction — live code findings are weighted higher
+  const codePatterns = scanResult.codePatterns || {};
+  const cpSummary = codePatterns.summary || {};
+  const liveCritical = (codePatterns.findings || []).filter(f => !f.isDead && f.severity === 'CRITICAL').length;
+  const liveHigh = (codePatterns.findings || []).filter(f => !f.isDead && f.severity === 'HIGH').length;
+  const deadCritical = (cpSummary.critical || 0) - liveCritical;
+  const deadHigh = (cpSummary.high || 0) - liveHigh;
+
+  // Live code patterns: up to 25 points (these require remediation)
+  if (liveCritical > 0) {
+    const deduction = Math.min(25, liveCritical * 8);
+    score -= deduction;
+    deductions.push({ reason: 'Critical security patterns in live code', points: deduction });
+  }
+  if (liveHigh > 0) {
+    const deduction = Math.min(15, liveHigh * 4);
+    score -= deduction;
+    deductions.push({ reason: 'High-risk security patterns in live code', points: deduction });
+  }
+  // Dead code patterns: up to 15 points (easier wins — just remove the files)
+  if (deadCritical > 0) {
+    const deduction = Math.min(15, deadCritical * 5);
+    score -= deduction;
+    deductions.push({ reason: 'Critical security patterns in dead code', points: deduction });
+  }
+  if (deadHigh > 0) {
+    const deduction = Math.min(10, deadHigh * 3);
+    score -= deduction;
+    deductions.push({ reason: 'High-risk security patterns in dead code', points: deduction });
+  }
+
   // License deduction (up to 15 points)
   const licenses = scanResult.licenses || {};
   if (licenses.summary?.restrictive > 0) {
