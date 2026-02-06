@@ -60,7 +60,7 @@ program
   .action(async (path, opts) => {
     const root = resolve(path);
 
-    const { scan } = await import('./scanner-legacy/index.mjs');
+    const { scanDeadCode } = await import('./scanner/scan-dead-code.mjs');
     const { loadKnowledge } = await import('./knowledge/loader.mjs');
 
     if (opts.verbose) {
@@ -73,7 +73,7 @@ program
 
     const knowledge = await loadKnowledge();
 
-    const scanResult = await scan(root, { onProgress });
+    const scanResult = await scanDeadCode(root, { onProgress });
     let results = toReporterShape(scanResult);
 
     // Optional AI qualification
@@ -178,7 +178,7 @@ program
   .action(async (path, opts) => {
     const root = resolve(path);
 
-    const { scan } = await import('./scanner-legacy/index.mjs');
+    const { scanDeadCode } = await import('./scanner/scan-dead-code.mjs');
     const { loadKnowledge } = await import('./knowledge/loader.mjs');
 
     console.error('Running verification scan...');
@@ -189,7 +189,7 @@ program
       if (opts.verbose && message) console.error(`  [${phase}] ${message}`);
     };
 
-    const scanResult = await scan(root, { onProgress });
+    const scanResult = await scanDeadCode(root, { onProgress });
     const results = toReporterShape(scanResult);
 
     const reporter = await import('./reporters/console.mjs');

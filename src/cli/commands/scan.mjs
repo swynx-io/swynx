@@ -171,6 +171,18 @@ export async function scanCommand(projectPath, options) {
       console.log('');
     }
 
+    // Show code pattern counts
+    const cp = result.codePatterns?.summary;
+    if (cp && cp.totalFindings > 0) {
+      console.log(' Dead Code Security Patterns:');
+      if (cp.critical > 0) console.log(`   Critical: ${cp.critical}`);
+      if (cp.high > 0) console.log(`   High:     ${cp.high}`);
+      if (cp.medium > 0) console.log(`   Medium:   ${cp.medium}`);
+      if (cp.low > 0) console.log(`   Low:      ${cp.low}`);
+      if (cp.proximityAlerts > 0) console.log(`   Proximity alerts: ${cp.proximityAlerts}`);
+      console.log('');
+    }
+
     // Output to file if requested
     if (options.file) {
       const { writeFileSync } = await import('fs');

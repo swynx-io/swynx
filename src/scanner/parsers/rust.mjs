@@ -46,15 +46,35 @@ export async function parse(file) {
       });
     }
 
-    // Extract mod declarations
-    const modPattern = /^\s*(pub\s+)?mod\s+(\w+)\s*[;{]/gm;
+    // Extract mod declarations (supports pub, pub(crate), pub(super), pub(in path))
+    // Also handles attributes before mod: #[macro_use] mod foo; #[cfg(...)] mod bar;
+    const modPattern = /^\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]+\))?\s+)?mod\s+(\w+)\s*[;{]/gm;
     while ((match = modPattern.exec(content)) !== null) {
       const lineNum = content.substring(0, match.index).split('\n').length;
       mods.push({
-        name: match[2],
-        public: !!match[1],
+        name: match[1],
+        public: match[0].includes('pub'),
         line: lineNum
       });
+    }
+
+    // Extract #[path = "..."] mod declarations — custom file paths for modules
+    // Pattern: #[path = "filename.rs"] mod name; or #[cfg_attr(..., path = "...")] mod name;
+    const pathModPattern = /^\s*#\[(?:cfg_attr\([^,]+,\s*)?path\s*=\s*"([^"]+)"\)?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]+\))?\s+)?mod\s+(\w+)\s*[;{]/gm;
+    while ((match = pathModPattern.exec(content)) !== null) {
+      const lineNum = content.substring(0, match.index).split('\n').length;
+      // Store path-remapped mod with the target filename
+      const existing = mods.find(m => m.name === match[2] && m.line === lineNum);
+      if (existing) {
+        existing.pathOverride = match[1]; // e.g., "unix.rs", "windows/mod.rs"
+      } else {
+        mods.push({
+          name: match[2],
+          public: match[0].includes('pub'),
+          line: lineNum,
+          pathOverride: match[1]
+        });
+      }
     }
 
     // Parse line by line

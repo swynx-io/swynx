@@ -174,9 +174,11 @@ function isNestedPackageMain(filePath, projectPath) {
     // map back to source (src/) since we analyze source files, not build output
     const _buildDirRe = /^(lib|dist|build|out)\//;
     const _srcExts = ['.ts', '.tsx', '.mts', '.js', '.mjs', '.jsx'];
+    let hasBuildDirFields = false;
     for (const field of [pkgJson.main, pkgJson.module].filter(Boolean)) {
       const fieldPath = field.replace(/^\.\//, '');
       if (_buildDirRe.test(fieldPath)) {
+        hasBuildDirFields = true;
         // Map lib/framework.js → src/framework.ts etc.
         const stem = fieldPath.replace(_buildDirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, '');
         for (const ext of _srcExts) {
@@ -185,22 +187,47 @@ function isNestedPackageMain(filePath, projectPath) {
             return { isMain: true, packageDir: pkgDir, packageName: pkgName };
           }
         }
-        // Fallback: check common src entry points (src/index.ts, src/main.ts, src/entry-bundler.ts)
-        for (const entry of ['src/index', 'src/main', 'src/entry-bundler', 'src/entry']) {
-          for (const ext of _srcExts) {
-            const candidate = join(pkgDir, entry + ext);
-            if (filePath === candidate) {
-              return { isMain: true, packageDir: pkgDir, packageName: pkgName };
-            }
+      }
+    }
+
+    // When main/module points to build output, check ALL common src entry points as entries.
+    // Multiple build entries are common (e.g., framework.ts + entry-bundler.ts in vuetify).
+    if (hasBuildDirFields) {
+      for (const entry of ['src/index', 'src/main', 'src/entry-bundler', 'src/entry']) {
+        for (const ext of _srcExts) {
+          const candidate = join(pkgDir, entry + ext);
+          if (filePath === candidate) {
+            return { isMain: true, packageDir: pkgDir, packageName: pkgName };
           }
+        }
+      }
+    }
+
+    // Workspace fallback: when no main/module field exists, treat src/index.{ts,tsx,js} as entry
+    if (!pkgJson.main && !pkgJson.module) {
+      for (const ext of _srcExts) {
+        const candidate = join(pkgDir, 'src/index' + ext);
+        if (filePath === candidate) {
+          return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+        }
+      }
+      // Also check root index.ts (packages/@scope/name/index.ts re-exports from src/)
+      for (const ext of _srcExts) {
+        const candidate = join(pkgDir, 'index' + ext);
+        if (filePath === candidate) {
+          return { isMain: true, packageDir: pkgDir, packageName: pkgName };
         }
       }
     }
 
     // Check exports field
     if (pkgJson.exports) {
-      const checkExport = (exp) => {
+      const checkExport = (exp, key) => {
         if (typeof exp === 'string') {
+          // Handle wildcard exports: "./icons/*" → "./lib/icons/*.mjs"
+          if (key && key.includes('*') && exp.includes('*')) {
+            return _checkWildcardExport(filePath, pkgDir, key, exp, _buildDirRe, _srcExts);
+          }
           const expPath = join(pkgDir, exp.replace(/^\.\//, ''));
           if (filePath === expPath) return true;
           // Also check source equivalent for build-dir exports
@@ -212,19 +239,56 @@ function isNestedPackageMain(filePath, projectPath) {
             }
           }
         } else if (exp && typeof exp === 'object') {
-          for (const value of Object.values(exp)) {
-            if (checkExport(value)) return true;
+          for (const [k, value] of Object.entries(exp)) {
+            if (checkExport(value, key || k)) return true;
           }
         }
         return false;
       };
-      if (checkExport(pkgJson.exports)) {
-        return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+      for (const [key, value] of Object.entries(pkgJson.exports)) {
+        if (checkExport(value, key)) {
+          return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+        }
       }
     }
   }
 
   return { isMain: false };
+}
+
+/**
+ * Check if a file matches a wildcard export pattern.
+ * e.g., key="./icons/*", value="./lib/icons/*.mjs" → match src/icons/Home.tsx
+ */
+function _checkWildcardExport(filePath, pkgDir, key, value, _buildDirRe, _srcExts) {
+  // Extract the directory part from the value pattern
+  const cleanValue = value.replace(/^\.\//, '');
+  // Convert wildcard pattern to a directory prefix: "lib/icons/*.mjs" → "lib/icons/"
+  const starIdx = cleanValue.indexOf('*');
+  if (starIdx < 0) return false;
+  const valuePrefix = cleanValue.substring(0, starIdx);
+  const valueSuffix = cleanValue.substring(starIdx + 1);
+  // Map build dir to src dir
+  const srcPrefix = _buildDirRe.test(valuePrefix)
+    ? valuePrefix.replace(_buildDirRe, 'src/')
+    : valuePrefix;
+  // Check if filePath matches: pkgDir/srcPrefix + name + srcExt
+  const relPath = filePath.startsWith(pkgDir + '/') ? filePath.slice(pkgDir.length + 1) : null;
+  if (!relPath) return false;
+  if (!relPath.startsWith(srcPrefix)) {
+    // Also try the original (non-mapped) prefix for non-build-dir exports
+    if (!relPath.startsWith(valuePrefix)) return false;
+  }
+  // Extract the file name part after the prefix, check extension
+  const afterPrefix = relPath.startsWith(srcPrefix) ? relPath.slice(srcPrefix.length) : relPath.slice(valuePrefix.length);
+  // It should be a single filename (no deeper nesting) with a source extension
+  if (afterPrefix.includes('/')) return false;
+  const extMatch = afterPrefix.match(/\.[^.]+$/);
+  if (!extMatch) return false;
+  const ext = extMatch[0];
+  // Accept any source extension
+  if (_srcExts.includes(ext) || ext === '.mjs' || ext === '.cjs' || ext === '.js') return true;
+  return false;
 }
 
 /**
@@ -1750,6 +1814,10 @@ const ENTRY_POINT_PATTERNS = [
   /test_[^/]+\.py$/,  // Pytest test files (test_something.py)
   /[^/]+_test\.py$/,  // Pytest test files (something_test.py)
   /\/tests\.py$/,     // Django test convention (app/tests.py)
+  // Python files in test/tests directories (pytest auto-discovers all .py files in test dirs,
+  // not just test_*.py — includes functional tests, regression data, input fixtures)
+  /\/tests?\/.*\.py$/,
+  /^tests?\/.*\.py$/,
   /__init__\.py$/,    // Package init files
   /\/management\/commands\//,  // Django management commands
   // Django - dynamically loaded modules
@@ -1841,7 +1909,7 @@ const ENTRY_POINT_PATTERNS = [
   /Cargo\.toml$/, /build\.rs$/,
   // Rust bench/example/fuzz targets
   /benches\/.*\.rs$/, /examples\/.*\.rs$/,
-  /\/fuzz_targets\/[^/]+\.rs$/,
+  /\/fuzz_targets\/[^/]+\.rs$/, /\/fuzz\/targets\/[^/]+\.rs$/,
   // Rust inline module submodule directories (loaded via mod declarations)
   /\/handlers\/[^/]+\.rs$/,
   /\/imports\/[^/]+\.rs$/,
@@ -1984,7 +2052,53 @@ const ENTRY_POINT_PATTERNS = [
   /\/reporters\//,
 
   // === Server-side Rendering ===
-  /\/server\//, /^server\//
+  /\/server\//, /^server\//,
+
+  // === E2E test directories with tool-name suffix (e2e_playwright/, e2e_cypress/, etc.) ===
+  /^e2e[_-]\w+\//, /\/e2e[_-]\w+\//,
+
+  // === Files directly inside any /test/ directory (catches test files without .test. suffix) ===
+  /\/test\/[^/]+\.([mc]?[jt]s|[jt]sx|py|rb|go|rs|java|kt|php)$/,
+
+  // === Scoped package root entry points (packages/@scope/name/index.ts) ===
+  /^packages\/@[^/]+\/[^/]+\/(index|main|server|app)\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Deep nested pages/ for file-based routing (packages/dev/docs/pages/) ===
+  /^packages\/[^/]+\/[^/]+\/pages\//,
+  /^packages\/@[^/]+\/[^/]+\/pages\//,
+
+  // === Rust integration tests (tests/*.rs auto-compiled by cargo test) ===
+  /\/tests\/[^/]+\.rs$/,
+  /^tests\/[^/]+\.rs$/,
+
+  // === Rust trybuild/compile-test files ===
+  /\/tests?\/(ui|ui-fail[^/]*|trybuild|compile-fail|compile-test)\//, /^tests?\/(ui|ui-fail[^/]*|trybuild|compile-fail|compile-test)\//,
+  /\/tests?\/[^/]+\/(pass|fail)\//, /^tests?\/[^/]+\/(pass|fail)\//,
+
+  // === Playground/dev directories (development environments) ===
+  /\/playgrounds?\//, /^playgrounds?\//,
+  /^[^/]+\/dev\//, /\/dev\/src\//,
+
+  // === Codemod transform files (standalone CLI entry points for jscodeshift) ===
+  /\/codemods?\/.*\/(transform|codemod)\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Parcel plugins (loaded via .parcelrc config, not imports) ===
+  /parcel-(transformer|resolver|namer|packager|optimizer|reporter|compressor|validator)\b/,
+
+  // === setupTests files at any depth (loaded by jest/vitest setupFiles config) ===
+  /setupTests\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Root-level ESLint local rules file ===
+  /^eslint[_-]?(local[_-])?rules?\.(c|m)?js$/,
+
+  // === Rust tasks directory (build/codegen scripts) ===
+  /^tasks\//, /\/tasks\/[^/]+\.(mjs|js|ts)$/,
+
+  // === lib/ directory root (compiled package output consumed externally) ===
+  /^lib\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === modules/ npm sub-packages ===
+  /^modules\/[^/]+\/[^/]+\.([mc]?[jt]s|[jt]sx)$/
 ];
 
 /**
@@ -2030,6 +2144,59 @@ function extractScriptEntryPoints(packageJson = {}, packageDir = '') {
 }
 
 /**
+ * Extract glob-based entry points from npm scripts.
+ * Test runners like tape, mocha, ava, jest, jasmine, and generic node scripts
+ * use glob patterns (e.g. tape test/glob.js, mocha src/glob.spec.js).
+ * This function extracts those globs and expands them to actual files.
+ * @param {Object} packageJson - Parsed package.json
+ * @param {string} projectPath - Absolute path to project root
+ * @param {string} [packageDir=''] - Relative dir of this package within the monorepo
+ * @returns {Set<string>} - Set of matched file paths (relative to projectPath)
+ */
+function extractScriptGlobEntryPoints(packageJson = {}, projectPath, packageDir = '') {
+  const entryPoints = new Set();
+  if (!projectPath) return entryPoints;
+  const scripts = packageJson.scripts || {};
+
+  // Test runner commands that take glob arguments
+  const testRunners = /(?:tape|faucet|mocha|ava|jest|jasmine|nyc\s+(?:mocha|ava|tape)|c8\s+(?:mocha|ava|tape)|node\s+-e\s+.*require|tap)/;
+
+  for (const [scriptName, scriptCmd] of Object.entries(scripts)) {
+    if (!scriptCmd) continue;
+
+    // Only look in test/build-related scripts for glob patterns
+    if (!testRunners.test(scriptCmd)) continue;
+
+    // Extract glob patterns: quoted or unquoted args that contain * or **
+    // e.g. tape 'test/**/*.js'  or  mocha test/**/*.spec.js
+    const globPattern = /(?:['"]([^'"]*\*[^'"]*)['"]\s*|(?:\s)((?:[^\s&|;'"]*\*[^\s&|;'"]*))\s*)/g;
+    let match;
+    while ((match = globPattern.exec(scriptCmd)) !== null) {
+      let pattern = match[1] || match[2];
+      if (!pattern) continue;
+      // Skip patterns that don't look like file paths
+      if (pattern.startsWith('-') || pattern.includes('=')) continue;
+
+      // Prefix with package directory for nested packages
+      const resolvedPattern = packageDir ? join(packageDir, pattern) : pattern;
+
+      try {
+        const matched = globSync(resolvedPattern, {
+          cwd: projectPath,
+          nodir: true,
+          ignore: ['node_modules/**', 'dist/**', 'build/**', '.git/**']
+        });
+        for (const f of matched) {
+          entryPoints.add(f.replace(/\\/g, '/'));
+        }
+      } catch { /* skip invalid globs */ }
+    }
+  }
+
+  return entryPoints;
+}
+
+/**
  * Extract script entry points from all nested packages in a monorepo
  * @param {string} projectPath - Project root path
  * @returns {Set<string>} - Set of all script entry point paths
@@ -2041,6 +2208,11 @@ function extractAllScriptEntryPoints(projectPath) {
   for (const [pkgDir, pkgJson] of nestedPackages) {
     const entries = extractScriptEntryPoints(pkgJson, pkgDir);
     for (const entry of entries) {
+      allEntryPoints.add(entry);
+    }
+    // Also expand glob patterns from npm scripts
+    const globEntries = extractScriptGlobEntryPoints(pkgJson, projectPath, pkgDir);
+    for (const entry of globEntries) {
       allEntryPoints.add(entry);
     }
   }
@@ -2112,6 +2284,167 @@ function extractHtmlEntryPoints(projectPath) {
   } catch {
     // Ignore errors
   }
+
+  return entryPoints;
+}
+
+/**
+ * Extract source files from Gruntfile.js/Gulpfile.js concat/uglify tasks.
+ * Concatenation-based builds (RxJS v4, older jQuery plugins) stitch files together
+ * without import/require, so the scanner can't trace them via the import graph.
+ * @param {string} projectPath - Project root path
+ * @returns {Set<string>} - Set of source file paths referenced by concat tasks
+ */
+function extractGruntConcatSources(projectPath) {
+  const entryPoints = new Set();
+  if (!projectPath) return entryPoints;
+
+  const gruntFiles = ['Gruntfile.js', 'Gruntfile.coffee', 'gruntfile.js'];
+  const gulpFiles = ['gulpfile.js', 'gulpfile.mjs', 'Gulpfile.js'];
+
+  for (const file of [...gruntFiles, ...gulpFiles]) {
+    try {
+      const filePath = join(projectPath, file);
+      if (!existsSync(filePath)) continue;
+      const content = readFileSync(filePath, 'utf-8');
+
+      // Extract glob patterns from concat/uglify src arrays
+      // Matches patterns like: src: ['src/**/*.js'], files: { 'dest': ['src/core/*.js'] }
+      const srcPatterns = [];
+
+      // Match src array patterns: src: ['pattern1', 'pattern2']
+      const srcArrayRe = /src\s*:\s*\[([^\]]+)\]/g;
+      let match;
+      while ((match = srcArrayRe.exec(content)) !== null) {
+        const items = match[1].match(/['"]([^'"]+)['"]/g);
+        if (items) {
+          for (const item of items) {
+            srcPatterns.push(item.replace(/['"]/g, ''));
+          }
+        }
+      }
+
+      // Match files object: files: { 'output.js': ['src/**/*.js'] }
+      const filesObjRe = /['"][^'"]+['"]\s*:\s*\[([^\]]+)\]/g;
+      while ((match = filesObjRe.exec(content)) !== null) {
+        const items = match[1].match(/['"]([^'"]+)['"]/g);
+        if (items) {
+          for (const item of items) {
+            srcPatterns.push(item.replace(/['"]/g, ''));
+          }
+        }
+      }
+
+      // Also match gulp.src('pattern') or gulp.src(['pattern1', 'pattern2'])
+      const gulpSrcRe = /\.src\s*\(\s*(?:\[([^\]]+)\]|['"]([^'"]+)['"])/g;
+      while ((match = gulpSrcRe.exec(content)) !== null) {
+        if (match[1]) {
+          const items = match[1].match(/['"]([^'"]+)['"]/g);
+          if (items) {
+            for (const item of items) {
+              srcPatterns.push(item.replace(/['"]/g, ''));
+            }
+          }
+        } else if (match[2]) {
+          srcPatterns.push(match[2]);
+        }
+      }
+
+      // Expand globs to actual files
+      for (const pattern of srcPatterns) {
+        // Skip non-JS patterns and negation patterns
+        if (pattern.startsWith('!')) continue;
+        if (!pattern.match(/\.(js|ts|mjs|cjs|jsx|tsx|coffee)$/i) && !pattern.includes('*')) continue;
+
+        try {
+          const matched = globSync(pattern, {
+            cwd: projectPath,
+            nodir: true,
+            ignore: ['node_modules/**', 'dist/**', 'build/**', '.git/**']
+          });
+          for (const f of matched) {
+            entryPoints.add(f.replace(/\\/g, '/'));
+          }
+        } catch { /* skip invalid globs */ }
+      }
+    } catch { /* skip read errors */ }
+  }
+
+  return entryPoints;
+}
+
+/**
+ * Extract entry points from tsconfig.json `files` and `include` arrays.
+ * TypeScript projects often use `/// <reference>` directives and tsconfig `files` arrays
+ * to link files without import/require statements (e.g., RxJS ts/core/).
+ * Also handles `include` glob patterns.
+ * @param {string} projectPath - Project root path
+ * @returns {Set<string>} - Set of file paths declared in tsconfig files/include
+ */
+function extractTsconfigFileEntries(projectPath) {
+  const entryPoints = new Set();
+  if (!projectPath) return entryPoints;
+
+  try {
+    // Find all tsconfig*.json files (root + packages)
+    const tsconfigPatterns = [
+      'tsconfig.json', 'tsconfig.*.json',
+      '**/tsconfig.json', '**/tsconfig.*.json',
+    ];
+
+    const tsconfigFiles = new Set();
+    for (const pattern of tsconfigPatterns) {
+      try {
+        const matches = globSync(pattern, {
+          cwd: projectPath,
+          nodir: true,
+          ignore: ['node_modules/**', 'dist/**', 'build/**', '.git/**']
+        });
+        for (const m of matches) tsconfigFiles.add(m);
+      } catch { /* skip */ }
+    }
+
+    for (const tsconfigFile of tsconfigFiles) {
+      try {
+        const tsconfigPath = join(projectPath, tsconfigFile);
+        const raw = readFileSync(tsconfigPath, 'utf-8');
+        // Strip comments (tsconfig allows // and /* */ comments)
+        const cleaned = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const tsconfig = JSON.parse(cleaned);
+        const tsconfigDir = dirname(tsconfigFile);
+
+        // Process `files` array — explicit file list
+        if (Array.isArray(tsconfig.files)) {
+          for (const f of tsconfig.files) {
+            if (typeof f !== 'string') continue;
+            // Resolve relative to tsconfig's directory
+            let resolved = join(tsconfigDir, f).replace(/\\/g, '/');
+            resolved = resolved.replace(/^\.\//, '');
+            entryPoints.add(resolved);
+          }
+        }
+
+        // Process `include` array — glob patterns
+        if (Array.isArray(tsconfig.include)) {
+          for (const pattern of tsconfig.include) {
+            if (typeof pattern !== 'string') continue;
+            // Resolve the glob relative to tsconfig's directory
+            const resolvedPattern = tsconfigDir ? join(tsconfigDir, pattern) : pattern;
+            try {
+              const matched = globSync(resolvedPattern, {
+                cwd: projectPath,
+                nodir: true,
+                ignore: ['node_modules/**', 'dist/**', 'build/**', '.git/**']
+              });
+              for (const f of matched) {
+                entryPoints.add(f.replace(/\\/g, '/'));
+              }
+            } catch { /* skip invalid globs */ }
+          }
+        }
+      } catch { /* skip unreadable/malformed tsconfig */ }
+    }
+  } catch { /* skip */ }
 
   return entryPoints;
 }
@@ -3894,16 +4227,47 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
         }
 
         // Resolve mod name to file path
-        // mod foo; -> look for foo.rs or foo/mod.rs in same directory
         const currentDir = dirname(current);
+
+        // If mod has #[path = "..."] override, use that path directly
+        if (mod.pathOverride) {
+          const overridePath = join(currentDir, mod.pathOverride);
+          const normalizedOverride = overridePath.replace(/\\/g, '/');
+          if (fileImports.has(normalizedOverride) && !visited.has(normalizedOverride)) {
+            queue.push(normalizedOverride);
+          }
+          // Also try relative to Rust 2018 parent module dir
+          const currentBase = basename(current);
+          if (currentBase.endsWith('.rs') && currentBase !== 'mod.rs' && currentBase !== 'lib.rs' && currentBase !== 'main.rs') {
+            const parentModDir = join(currentDir, currentBase.replace(/\.rs$/, ''));
+            const altPath = join(parentModDir, mod.pathOverride).replace(/\\/g, '/');
+            if (fileImports.has(altPath) && !visited.has(altPath)) {
+              queue.push(altPath);
+            }
+          }
+          continue;
+        }
+
+        // mod foo; -> look for foo.rs or foo/mod.rs in same directory
         const modFileName = mod.name + '.rs';
         const modDirFile = mod.name + '/mod.rs';
 
-        // Try both patterns
+        // Build candidates list
         const modCandidates = [
           join(currentDir, modFileName),
           join(currentDir, modDirFile)
         ];
+
+        // Rust 2018 module path: if current file is "rules.rs" (not mod.rs/lib.rs/main.rs),
+        // then it manages a sibling "rules/" directory. Child mods resolve to rules/child.rs.
+        const currentBase = basename(current);
+        if (currentBase.endsWith('.rs') && currentBase !== 'mod.rs' && currentBase !== 'lib.rs' && currentBase !== 'main.rs') {
+          const parentModDir = join(currentDir, currentBase.replace(/\.rs$/, ''));
+          modCandidates.push(
+            join(parentModDir, modFileName),    // e.g., rules/import.rs
+            join(parentModDir, modDirFile)      // e.g., rules/import/mod.rs
+          );
+        }
 
         for (const candidate of modCandidates) {
           const normalizedCandidate = candidate.replace(/\\/g, '/');
@@ -3911,6 +4275,37 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
             queue.push(normalizedCandidate);
           }
         }
+      }
+
+      // Follow Rust automod::dir!("path") macros — includes all .rs files in a directory as modules
+      if (current.endsWith('.rs') && projectPath) {
+        try {
+          const rsContent = readFileSync(join(projectPath, current), 'utf-8');
+          // Match automod::dir!("subdir") or automod::dir!(".")
+          const automodRe = /automod::dir!\s*\(\s*"([^"]+)"\s*\)/g;
+          let automodMatch;
+          while ((automodMatch = automodRe.exec(rsContent)) !== null) {
+            const automodDir = automodMatch[1];
+            const currentDir = dirname(current);
+            const targetDir = automodDir === '.' ? currentDir : join(currentDir, automodDir).replace(/\\/g, '/');
+            // Use dirIndex if available, otherwise scan fileImports keys
+            const dirFiles = dirIndex ? dirIndex.get(targetDir) : null;
+            if (dirFiles) {
+              for (const f of dirFiles) {
+                if (f.endsWith('.rs') && !visited.has(f)) {
+                  queue.push(f);
+                }
+              }
+            } else {
+              // Fallback: scan all known file paths in that directory
+              for (const filePath of fileImports.keys()) {
+                if (filePath.endsWith('.rs') && dirname(filePath) === targetDir && !visited.has(filePath)) {
+                  queue.push(filePath);
+                }
+              }
+            }
+          }
+        } catch { /* skip read errors */ }
       }
 
       // Follow additional references (e.g., C# class instantiation, extension methods)
@@ -4110,6 +4505,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
 
   // Extract entry points from various sources
   const scriptEntryPoints = extractScriptEntryPoints(packageJson);
+  const scriptGlobEntryPoints = projectPath ? extractScriptGlobEntryPoints(packageJson, projectPath) : new Set();
   const nestedScriptEntryPoints = projectPath ? extractAllScriptEntryPoints(projectPath) : new Set();
   const htmlEntryPoints = extractHtmlEntryPoints(projectPath);
   const viteReplacementEntryPoints = extractViteReplacementEntryPoints(projectPath);
@@ -4119,8 +4515,14 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   const configEntryPoints = configEntryData.entries;
   setConfigEntryData(configEntryData);  // Make available to isEntryPoint()
 
+  // Extract entry points from Gruntfile/Gulpfile concat tasks
+  const gruntConcatEntries = projectPath ? extractGruntConcatSources(projectPath) : new Set();
+
+  // Extract entry points from tsconfig.json files/include arrays
+  const tsconfigFileEntries = projectPath ? extractTsconfigFileEntries(projectPath) : new Set();
+
   // Collect all entry point file paths for reachability analysis
-  const entryPointFiles = new Set([...scriptEntryPoints, ...nestedScriptEntryPoints, ...htmlEntryPoints, ...viteReplacementEntryPoints, ...configEntryPoints]);
+  const entryPointFiles = new Set([...scriptEntryPoints, ...scriptGlobEntryPoints, ...nestedScriptEntryPoints, ...htmlEntryPoints, ...viteReplacementEntryPoints, ...configEntryPoints, ...gruntConcatEntries, ...tsconfigFileEntries]);
 
   // Build map of class names to files (for DI container reference detection)
   const classToFile = new Map();

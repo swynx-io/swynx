@@ -23,6 +23,35 @@ export function applyRules(analysis, rulesConfig = {}) {
   const deadCodeFindings = checkUnusedCode(analysis.deadCode, rulesConfig);
   findings.push(...deadCodeFindings);
 
+  // Dead code security pattern checks
+  if (analysis.codePatterns?.summary?.critical > 0) {
+    findings.push({
+      rule: 'dead-code-critical-patterns',
+      severity: getSeverity('dead-code-critical-patterns', rulesConfig, 'critical'),
+      category: 'security',
+      message: `${analysis.codePatterns.summary.critical} critical security patterns found in dead code (${Object.keys(analysis.codePatterns.byCWE || {}).join(', ')})`,
+      recommendation: 'Review and remove dead files containing dangerous patterns (eval, exec, hardcoded credentials)'
+    });
+  }
+  if (analysis.codePatterns?.summary?.high > 0) {
+    findings.push({
+      rule: 'dead-code-high-patterns',
+      severity: getSeverity('dead-code-high-patterns', rulesConfig, 'warning'),
+      category: 'security',
+      message: `${analysis.codePatterns.summary.high} high-risk security patterns found in dead code`,
+      recommendation: 'Review dead files with XSS, path traversal, or deserialization patterns'
+    });
+  }
+  if (analysis.codePatterns?.summary?.proximityAlerts > 0) {
+    findings.push({
+      rule: 'dead-code-critical-paths',
+      severity: getSeverity('dead-code-critical-paths', rulesConfig, 'warning'),
+      category: 'security',
+      message: `${analysis.codePatterns.summary.proximityAlerts} dead files in security-critical directories (auth, crypto, sandbox)`,
+      recommendation: 'Dead code in security-sensitive directories increases audit cost — remove or document'
+    });
+  }
+
   // Duplicate code check
   if (analysis.duplicates) {
     for (const dup of analysis.duplicates.exactDuplicates || []) {
