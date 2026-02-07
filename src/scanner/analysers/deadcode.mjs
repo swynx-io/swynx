@@ -5941,7 +5941,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
         safeToRemove: deadExports.map(e => e.name),
         keep: liveExports.map(e => e.name),
         reasoning: `File has ${deadExports.length} unused export(s) out of ${totalExports} total. ` +
-                   `Live exports are imported by other files; dead exports have no detected importers.`
+                   `Live exports are imported by other files; dead exports have no detected importers.`,
+        command: deadExports.map(e => `Remove \`${e.name}\` (line ${e.line})`).join('\n')
       }
     });
     results.summary.totalDeadExports += deadExports.length;
