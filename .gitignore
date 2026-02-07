@@ -3,3 +3,13 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# Proprietary data — do not publish
+results/
+models/
+scan-all-repos.mjs
+scan-repo-worker.mjs
+batch*-repos.mjs
+src/ai/
+src/knowledge/learned/
+scripts/finetune*
