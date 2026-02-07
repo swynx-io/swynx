@@ -3725,9 +3725,16 @@ function buildRecommendation(filePath, deadExports, liveExports, totalFilesSearc
     .map(e => e.lineEnd ? `${e.line}-${e.lineEnd}` : `${e.line}`)
     .join(', ');
 
+  // Confidence based on search coverage and live export confirmation
+  const partialConfidence = totalFilesSearched >= 50 && liveExports.some(e => e.importedBy?.length > 0)
+    ? 'high'
+    : totalFilesSearched < 10
+      ? 'low'
+      : 'medium';
+
   return {
     action: 'partial-cleanup',
-    confidence: 'medium',
+    confidence: partialConfidence,
     safeToRemove: deadNames,
     keep: liveNames,
     linesToRemove: lineRanges,
@@ -5775,6 +5782,14 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     const cost = calculateDeadCodeCost(sizeBytes);
     const exports = parseExports(content, filePath);
 
+    // Determine confidence based on available signals
+    const dynamicRiskRe = /\b(plugin|middleware|handler|command|hook|loader|strategy|adapter|migration)s?\b/i;
+    const hasDynamicRisk = dynamicRiskRe.test(filePath);
+    const entryPointCount = results.entryPoints.length;
+    const fullyDeadConfidence = entryPointCount >= 5 && !hasDynamicRisk ? 'high'
+      : entryPointCount < 3 || hasDynamicRisk ? 'low'
+      : 'medium';
+
     results.fullyDeadFiles.push({
       file: filePath,
       relativePath: filePath,
@@ -5796,11 +5811,11 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       },
       recommendation: {
         action: 'review-for-removal',
-        confidence: 'medium',
+        confidence: fullyDeadConfidence,
         safeToRemove: exports.map(e => e.name),
         keep: [],
         verifyFirst: `grep -r "${basename(filePath).replace(/\.[^.]+$/, '')}" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" --include="*.mjs" --include="*.vue" --include="*.html" --include="*.json" --include="*.yaml" --include="*.yml"`,
-        reasoning: `File is not reachable from any detected entry point (${results.entryPoints.length} entry points found). ` +
+        reasoning: `File is not reachable from any detected entry point (${entryPointCount} entry points found). ` +
                    `Verify it's not loaded dynamically or referenced in config files before removing.`
       }
     });
@@ -5883,6 +5898,12 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     const totalExports = liveExports.length + deadExports.length;
     const sizeBytes = file.size || 0;
 
+    // Confidence: high when live exports have confirmed importers (proves tracking works for this file)
+    const liveHaveImporters = liveExports.some(e => e.importedBy?.length > 0);
+    const partialConfidence = liveHaveImporters && deadExports.length >= 2 ? 'high'
+      : liveHaveImporters ? 'high'
+      : 'medium';
+
     results.partiallyDeadFiles.push({
       file: filePath,
       relativePath: filePath,
@@ -5901,7 +5922,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       },
       recommendation: {
         action: 'remove-dead-exports',
-        confidence: 'medium',
+        confidence: partialConfidence,
         safeToRemove: deadExports.map(e => e.name),
         keep: liveExports.map(e => e.name),
         reasoning: `File has ${deadExports.length} unused export(s) out of ${totalExports} total. ` +
