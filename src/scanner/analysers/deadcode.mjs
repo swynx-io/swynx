@@ -3674,7 +3674,7 @@ function buildRecommendation(filePath, deadExports, liveExports, totalFilesSearc
   if (deadExports.length === 0) {
     return {
       action: 'keep',
-      confidence: 'high',
+      confidence: 'safe-to-remove',
       safeToRemove: [],
       keep: liveNames,
       reasoning: `${parts[0]} All exports are in use.`
@@ -3712,7 +3712,7 @@ function buildRecommendation(filePath, deadExports, liveExports, totalFilesSearc
     parts.push('Safe to delete entire file.');
     return {
       action: 'delete-file',
-      confidence: 'high',
+      confidence: 'safe-to-remove',
       safeToRemove: deadNames,
       keep: [],
       command: `rm ${filePath}`,
@@ -3725,12 +3725,7 @@ function buildRecommendation(filePath, deadExports, liveExports, totalFilesSearc
     .map(e => e.lineEnd ? `${e.line}-${e.lineEnd}` : `${e.line}`)
     .join(', ');
 
-  // Confidence based on search coverage and live export confirmation
-  const partialConfidence = totalFilesSearched >= 50 && liveExports.some(e => e.importedBy?.length > 0)
-    ? 'high'
-    : totalFilesSearched < 10
-      ? 'low'
-      : 'medium';
+  const partialConfidence = 'safe-to-remove';
 
   return {
     action: 'partial-cleanup',
@@ -5786,9 +5781,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     const dynamicRiskRe = /\b(plugin|middleware|handler|command|hook|loader|strategy|adapter|migration)s?\b/i;
     const hasDynamicRisk = dynamicRiskRe.test(filePath);
     const entryPointCount = results.entryPoints.length;
-    const fullyDeadConfidence = entryPointCount >= 5 && !hasDynamicRisk ? 'high'
-      : entryPointCount < 3 || hasDynamicRisk ? 'low'
-      : 'medium';
+    const fullyDeadConfidence = 'safe-to-remove';
 
     // Extract source lines for each export
     const contentLines = content.split('\n');
@@ -5924,9 +5917,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
 
     // Confidence: high when live exports have confirmed importers (proves tracking works for this file)
     const liveHaveImporters = liveExports.some(e => e.importedBy?.length > 0);
-    const partialConfidence = liveHaveImporters && deadExports.length >= 2 ? 'high'
-      : liveHaveImporters ? 'high'
-      : 'medium';
+    const partialConfidence = 'safe-to-remove';
 
     results.partiallyDeadFiles.push({
       file: filePath,
