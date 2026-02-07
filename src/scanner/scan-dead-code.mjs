@@ -128,8 +128,12 @@ const DEFAULT_EXCLUDE = [
   '**/tests/baselines/**', '**/test/baselines/**',
   '**/__snapshots__/**', '**/snapshots/**',
   '**/test-fixtures/**', '**/test_fixtures/**', '**/__fixtures__/**',
-  '**/fixtures/**',
+  '**/fixtures/**', '**/fixture/**',
   '**/testdata/**', '**/test-data/**',
+  '**/vendor/**',
+  '**/__mockdata__/**', '**/__mock__/**', '**/__for-testing__/**',
+  '**/pkg-tests-fixtures/**', '**/pkg-tests-specs/**',
+  '**/type-tests/**', '**/type-test/**',
 ];
 
 /**

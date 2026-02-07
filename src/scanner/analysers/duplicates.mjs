@@ -2,6 +2,7 @@
 // Duplicate code detection with actual content comparison
 
 import { createHash } from 'crypto';
+import { readFileSync } from 'fs';
 
 // Common entry point and boilerplate function names that shouldn't be flagged
 const EXCLUDED_FUNCTION_NAMES = new Set([
@@ -63,7 +64,11 @@ export async function findDuplicates(jsAnalysis, onProgress = () => {}) {
   for (let i = 0; i < jsAnalysis.length; i++) {
     const file = jsAnalysis[i];
     const filePath = file.file?.relativePath || file.file;
-    const fileContent = file.content || '';
+    // A10 in deadcode.mjs nulls content to free memory; re-read from disk if needed
+    let fileContent = file.content || '';
+    if (!fileContent && file.file?.path) {
+      try { fileContent = readFileSync(file.file.path, 'utf-8'); } catch {}
+    }
 
     // Report progress every 2 files and yield to event loop
     if (i % 2 === 0 || i === total - 1) {

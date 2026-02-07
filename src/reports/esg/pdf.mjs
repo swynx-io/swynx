@@ -95,7 +95,7 @@ export async function generateESGPDF(data) {
          .text(`${data.summary.totalEmissions.toFixed(1)}`, 50, y, { width: boxWidth, align: 'center' });
       doc.fontSize(9)
          .fillColor(lightGray)
-         .text('kg CO₂e Total', 50, y + 30, { width: boxWidth, align: 'center' });
+         .text('kg CO2e Total', 50, y + 30, { width: boxWidth, align: 'center' });
 
       // Projects
       doc.fontSize(24)
@@ -115,10 +115,10 @@ export async function generateESGPDF(data) {
 
       // Trend
       const trendText = data.summary.trend < 0
-        ? `▼ ${Math.abs(data.summary.trend).toFixed(0)}%`
+        ? `Down ${Math.abs(data.summary.trend).toFixed(0)}%`
         : data.summary.trend > 0
-          ? `▲ ${data.summary.trend.toFixed(0)}%`
-          : '● 0%';
+          ? `Up ${data.summary.trend.toFixed(0)}%`
+          : 'No change';
       const trendColor = data.summary.trend < 0 ? '#10b981' : data.summary.trend > 0 ? '#ef4444' : textColor;
 
       doc.fontSize(24)
@@ -165,10 +165,10 @@ export async function generateESGPDF(data) {
       // Project rows
       for (const project of data.projects.slice(0, 10)) { // Limit to 10
         const trendStr = project.trend < -2
-          ? `▼ ${Math.abs(project.trend).toFixed(0)}%`
+          ? `Down ${Math.abs(project.trend).toFixed(0)}%`
           : project.trend > 2
-            ? `▲ ${project.trend.toFixed(0)}%`
-            : '● No change';
+            ? `Up ${project.trend.toFixed(0)}%`
+            : 'No change';
         const rowTrendColor = project.trend < -2 ? '#10b981' : project.trend > 2 ? '#ef4444' : lightGray;
 
         doc.fontSize(10)
@@ -210,7 +210,7 @@ export async function generateESGPDF(data) {
       doc.fontSize(10)
          .fillColor(textColor)
          .text(`Issues fixed: ${data.summary.issuesFixed}`, 70, y)
-         .text(`Estimated annual savings: ${data.summary.emissionsAvoided.toFixed(1)} kg CO₂e`, 70, y + 18);
+         .text(`Estimated annual savings: ${data.summary.emissionsAvoided.toFixed(1)} kg CO2e`, 70, y + 18);
 
       y += 50;
 
@@ -272,7 +272,7 @@ export async function generateESGPDF(data) {
 
       doc.fontSize(10)
          .fillColor(lightGray)
-         .text('Emissions calculated using PEER methodology aligned with', 50, y)
+         .text('Emissions calculated using Swynx methodology aligned with', 50, y)
          .text('GHG Protocol Scope 3 (Category 1: Purchased Goods & Services).', 50, y + 15);
 
       y += 45;
@@ -287,7 +287,7 @@ export async function generateESGPDF(data) {
          .fillColor(lightGray)
          .text('• Bundle size × average monthly page views × energy per byte', 60, y)
          .text('• Energy per byte: 0.6 kWh per GB (The Shift Project data)', 60, y + 15)
-         .text('• Grid carbon intensity: 0.233 kg CO₂ per kWh (UK average)', 60, y + 30)
+         .text('• Grid carbon intensity: 0.233 kg CO2 per kWh (UK average)', 60, y + 30)
          .text('• Server processing time × requests × energy per compute unit', 60, y + 45);
 
       y += 80;
@@ -300,22 +300,20 @@ export async function generateESGPDF(data) {
 
       doc.fontSize(9)
          .fillColor(primaryColor)
-         .text('Full methodology: https://swynx.oynk.co.uk/methodology', 50, y);
+         .text('Full methodology: https://swynx.io/methodology', 50, y);
 
       // ===== FOOTER =====
-      y = doc.page.height - 80;
+      y = doc.page.height - 100;
 
       doc.moveTo(50, y)
          .lineTo(50 + pageWidth, y)
          .strokeColor(lineColor)
          .stroke();
 
-      y += 15;
-
       doc.fontSize(8)
          .fillColor(lightGray)
-         .text(`Report ID: ${data.reportId}`, 50, y)
-         .text(`Verify: https://swynx.oynk.co.uk/verify/${data.reportId}`, 50, y + 12);
+         .text(`Report ID: ${data.reportId}`, 50, y + 12, { lineBreak: false })
+         .text(`Verify: https://swynx.io/verify/${data.reportId}`, 50, y + 24, { lineBreak: false });
 
       doc.end();
     } catch (error) {

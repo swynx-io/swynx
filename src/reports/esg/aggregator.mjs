@@ -185,7 +185,9 @@ export async function aggregateESGData(options = {}) {
   const projectMap = new Map();
 
   for (const scan of filteredScans) {
-    const projectName = scan.project_name || scan.projectName || 'Unknown Project';
+    const projectName = scan.project_name || scan.projectName ||
+                        (scan.project_path || scan.projectPath || '').split('/').filter(Boolean).pop() ||
+                        'Unknown Project';
     const projectPath = scan.project_path || scan.projectPath;
 
     if (!projectMap.has(projectPath)) {
@@ -369,7 +371,7 @@ export async function aggregateESGData(options = {}) {
     projects: projectSummaries,
     monthlyBreakdown,
     methodology: {
-      version: 'PEER v1.0',
+      version: 'Swynx v1.0',
       framework: 'GHG Protocol Scope 3 aligned',
       energyPerByte: '0.6 kWh per GB (Shift Project)',
       gridIntensity: '0.233 kg CO₂ per kWh (UK average)',

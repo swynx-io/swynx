@@ -14,7 +14,6 @@ NC='\033[0m'
 
 REPO="swynx-io/swynx"
 INSTALL_DIR="${SWYNX_INSTALL_DIR:-$HOME/.swynx}"
-AI_MODEL="qwen2.5-coder:1.5b"
 DASHBOARD_PORT="${SWYNX_PORT:-8999}"
 
 print_banner() {
@@ -112,63 +111,6 @@ EOF
   echo -e "${GREEN}✓ PATH configured${NC}"
 }
 
-wait_for_engine() {
-  # Wait for API to be ready (max 30 seconds)
-  for i in {1..30}; do
-    if curl -s http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  return 1
-}
-
-spinner() {
-  local pid=$1
-  local delay=0.2
-  local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-  local i=0
-  local elapsed=0
-  while ps -p $pid > /dev/null 2>&1; do
-    local char="${spinstr:$i:1}"
-    printf "\r  ${CYAN}%s${NC} Warming AI (${elapsed}s)... first run takes 1-2 min on CPU" "$char"
-    i=$(( (i + 1) % ${#spinstr} ))
-    elapsed=$((elapsed + 1))
-    sleep 1
-  done
-  printf "\r\033[K"
-}
-
-install_ai_engine() {
-  echo -e "${BLUE}Setting up Swynx AI Engine...${NC}"
-
-  # Install engine runtime if missing
-  if ! command -v ollama &> /dev/null; then
-    echo "  Installing runtime..."
-    curl -fsSL https://ollama.com/install.sh 2>/dev/null | sh > /dev/null 2>&1
-  fi
-
-  # Start engine if not running
-  if ! curl -s http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then
-    nohup ollama serve > /dev/null 2>&1 &
-    sleep 2
-  fi
-
-  # Download and warm model in background - don't block install
-  if command -v ollama &> /dev/null; then
-    if ! ollama list 2>/dev/null | grep -q "qwen2.5-coder"; then
-      echo "  AI model will download in background (~900MB)"
-      (ollama pull "$AI_MODEL" > /dev/null 2>&1 && \
-       ollama create swynx-deadcode -f "$INSTALL_DIR/src/ai/Modelfile" > /dev/null 2>&1) &
-    elif ! ollama list 2>/dev/null | grep -q "swynx-deadcode"; then
-      (ollama create swynx-deadcode -f "$INSTALL_DIR/src/ai/Modelfile" > /dev/null 2>&1) &
-    fi
-    echo -e "${GREEN}✓ AI engine starting in background${NC}"
-  else
-    echo -e "${YELLOW}⚠ Ollama not available - AI features disabled${NC}"
-  fi
-}
-
 start_dashboard() {
   echo -e "${BLUE}Starting Dashboard...${NC}"
 
@@ -221,8 +163,8 @@ print_success() {
   echo -e "  Dashboard: ${BLUE}http://${LOCAL_IP}:${DASHBOARD_PORT}${NC}"
   echo ""
   echo "  CLI commands:"
-  echo -e "    ${CYAN}swynx scan .${NC}              # Basic scan"
-  echo -e "    ${CYAN}swynx scan . --qualify${NC}   # With AI analysis"
+  echo -e "    ${CYAN}swynx scan .${NC}              # Scan current directory"
+  echo -e "    ${CYAN}swynx dashboard${NC}           # Open dashboard"
   echo ""
   echo -e "  Docs: ${BLUE}https://github.com/swynx-io/swynx${NC}"
   echo ""
@@ -234,6 +176,5 @@ stop_existing
 check_node
 install_swynx
 setup_path
-install_ai_engine
 start_dashboard
 print_success

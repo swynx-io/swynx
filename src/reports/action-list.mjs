@@ -85,7 +85,7 @@ export function extractIssues(scanData) {
     });
   }
 
-  // Unused file candidates (stored in details)
+  // Fully dead files (orphan files) - not reachable from any entry point
   // Lower priority than security - these are candidates for cleanup
   const deadFiles = raw?.details?.deadCode?.fullyDeadFiles || raw?.details?.deadCode?.orphanFiles || [];
   for (const file of deadFiles) {
@@ -94,19 +94,27 @@ export function extractIssues(scanData) {
     const lineCount = file.lineCount || file.lines;
     const sizeBytes = file.sizeBytes || file.size;
     const confidence = file.recommendation?.confidence || 'medium';
+    const exports = file.exports || [];
+    const summary = file.summary || {};
+    const entryPointCount = raw?.details?.deadCode?.entryPoints?.length || 0;
 
     issues.push({
       id,
       severity: 'medium',  // Unused code is cleanup, not urgent
       category: 'dead-code',
-      title: `Unused file candidate: ${filePath}`,
-      description: lineCount ? `${lineCount} lines, no imports detected - verify before removing` : 'No imports detected - verify before removing',
+      title: `Unused file: ${filePath}`,
+      description: `All ${summary.totalExports || exports.length || '?'} export(s) are dead. ` +
+        `File has ${lineCount || '?'} lines.`,
       file: filePath,
       lines: lineCount,
       size: sizeBytes,
       confidence,
+      exports: exports.map(e => typeof e === 'object' ? e : { name: e }),
+      summary,
+      costImpact: file.costImpact,
+      recommendation: file.recommendation,
+      entryPointCount,
       fix: {
-        // Don't suggest rm directly - suggest verification first
         command: confidence === 'high'
           ? `rm ${filePath}`
           : `# Verify before removing:\ngrep -r "${filePath.split('/').pop().replace(/\.[^.]+$/, '')}" --include="*.html" --include="*.json" .`,
@@ -114,7 +122,51 @@ export function extractIssues(scanData) {
         type: 'review-then-delete'
       },
       impact: {
-        bytes: sizeBytes
+        bytes: sizeBytes,
+        cost: file.costImpact?.annual,
+        co2: file.costImpact?.monthlyCo2
+      }
+    });
+  }
+
+  // Partially dead files - reachable files with some unused exports
+  const partiallyDeadFiles = raw?.details?.deadCode?.partiallyDeadFiles || [];
+  for (const file of partiallyDeadFiles) {
+    const filePath = file.file || file.relativePath;
+    if (!filePath) continue;
+    const id = generateIssueId('dead-exports', filePath);
+    const deadExportNames = file.deadExports || [];
+    const allExports = file.exports || [];
+    const sizeBytes = file.sizeBytes || file.size;
+    const confidence = file.recommendation?.confidence || 'medium';
+    const summary = file.summary || {};
+    const entryPointCount = raw?.details?.deadCode?.entryPoints?.length || 0;
+
+    issues.push({
+      id,
+      severity: 'low',
+      category: 'dead-exports',
+      title: `${deadExportNames.length} unused export(s) in ${filePath}`,
+      description: `${summary.deadExports || deadExportNames.length} of ${summary.totalExports || allExports.length} exports are never imported. ` +
+        `Dead: ${deadExportNames.join(', ')}`,
+      file: filePath,
+      lines: file.lineCount,
+      size: sizeBytes,
+      confidence,
+      exports: allExports,
+      deadExportNames,
+      summary,
+      recommendation: file.recommendation,
+      entryPointCount,
+      fix: {
+        command: deadExportNames.length === 1
+          ? `# Remove unused export '${deadExportNames[0]}' from ${filePath}`
+          : `# Remove ${deadExportNames.length} unused exports from ${filePath}:\n# ${deadExportNames.join(', ')}`,
+        effort: deadExportNames.length <= 3 ? '5 min' : '15 min',
+        type: 'remove-exports'
+      },
+      impact: {
+        bytes: summary.deadBytes || 0
       }
     });
   }

@@ -1,6 +1,6 @@
 {
   "name": "swynx",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Dead code detection that learns. Find unused files across JS/TS, Python, Go, and Java.",
   "author": "Swynx <hello@swynx.io>",

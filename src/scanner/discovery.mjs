@@ -45,6 +45,7 @@ const DEFAULT_EXCLUDE = [
   // Vendored third-party code
   '**/third_party/**',
   '**/3rdparty/**',
+  '**/vendor/**',
   // Exclude log directories and files (can be huge, not code)
   '**/logs/**',
   '**/log/**',
@@ -156,7 +157,7 @@ export function categoriseFiles(files) {
 
   for (const file of files) {
     const ext = file.ext;
-    if (['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.vue'].includes(ext)) {
+    if (['.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx', '.vue', '.svelte'].includes(ext)) {
       categories.javascript.push(file);
     } else if (['.py', '.pyi'].includes(ext)) {
       categories.python.push(file);

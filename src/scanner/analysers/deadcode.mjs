@@ -36,7 +36,7 @@ function findNestedPackageJsons(projectPath) {
   const packages = new Map();
 
   try {
-    // Look in common monorepo directories
+    // 1. Look in common monorepo directories (hardcoded patterns)
     const monorepoPatterns = [
       'packages/*/package.json',
       'apps/*/package.json',
@@ -49,7 +49,53 @@ function findNestedPackageJsons(projectPath) {
       'apps/*/*/package.json'
     ];
 
-    for (const pattern of monorepoPatterns) {
+    // 2. Read workspace configuration to discover ALL workspace packages
+    // This covers AWS SDK (clients/), Azure SDK (sdk/**), etc.
+    try {
+      const rootPkgPath = join(projectPath, 'package.json');
+      if (existsSync(rootPkgPath)) {
+        const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf-8'));
+        const wsConfig = rootPkg.workspaces;
+        const wsPatterns = Array.isArray(wsConfig) ? wsConfig : (wsConfig?.packages || []);
+        for (const wp of wsPatterns) {
+          const clean = wp.replace(/\/$/, '');
+          if (clean.startsWith('!')) continue; // skip negation patterns
+          monorepoPatterns.push(clean.endsWith('/package.json') ? clean : clean + '/package.json');
+        }
+      }
+    } catch { /* ignore */ }
+
+    // 3. Read pnpm-workspace.yaml
+    try {
+      const pnpmWsPath = join(projectPath, 'pnpm-workspace.yaml');
+      if (existsSync(pnpmWsPath)) {
+        const wsContent = readFileSync(pnpmWsPath, 'utf-8');
+        const wsPatternRe = /^\s*-\s*['"]?([^'"#\n]+?)['"]?\s*$/gm;
+        let wsMatch;
+        while ((wsMatch = wsPatternRe.exec(wsContent)) !== null) {
+          const clean = wsMatch[1].trim().replace(/\/$/, '');
+          if (clean.startsWith('!') || !clean) continue;
+          monorepoPatterns.push(clean.endsWith('/package.json') ? clean : clean + '/package.json');
+        }
+      }
+    } catch { /* ignore */ }
+
+    // 4. Read lerna.json
+    try {
+      const lernaPath = join(projectPath, 'lerna.json');
+      if (existsSync(lernaPath)) {
+        const lerna = JSON.parse(readFileSync(lernaPath, 'utf-8'));
+        for (const lp of (lerna.packages || [])) {
+          const clean = lp.replace(/\/$/, '');
+          monorepoPatterns.push(clean.endsWith('/package.json') ? clean : clean + '/package.json');
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Deduplicate patterns
+    const uniquePatterns = [...new Set(monorepoPatterns)];
+
+    for (const pattern of uniquePatterns) {
       try {
         const matches = globSync(pattern, { cwd: projectPath, nodir: true });
         for (const match of matches) {
@@ -57,7 +103,9 @@ function findNestedPackageJsons(projectPath) {
             const pkgPath = join(projectPath, match);
             const pkgContent = JSON.parse(readFileSync(pkgPath, 'utf-8'));
             const pkgDir = dirname(match);
-            packages.set(pkgDir, pkgContent);
+            if (!packages.has(pkgDir)) {
+              packages.set(pkgDir, pkgContent);
+            }
           } catch {
             // Ignore individual package.json parse errors
           }
@@ -140,10 +188,14 @@ function isNestedPackageMain(filePath, projectPath) {
       return false;
     });
 
-    // If package is neither depended upon NOR has internal dependencies, it's potentially abandoned
+    // If package is neither depended upon NOR has internal dependencies, it's potentially abandoned.
+    // BUT: packages with main/module/source fields are likely published independently (e.g., Alpine plugins),
+    // so only flag truly empty packages as abandoned.
     if (pkgName && !_dependedPackagesCache?.has(pkgName) && !hasInternalDeps) {
-      // Package is isolated - don't treat as entry point, flag as abandoned
-      return { isMain: false, isAbandoned: true };
+      const hasPublishableFields = pkgJson.main || pkgJson.module || pkgJson.source || pkgJson.exports;
+      if (!hasPublishableFields) {
+        return { isMain: false, isAbandoned: true };
+      }
     }
 
     // Check if this file is the package's main entry
@@ -151,6 +203,14 @@ function isNestedPackageMain(filePath, projectPath) {
       const mainPath = join(pkgDir, pkgJson.main.replace(/^\.\//, ''));
       if (filePath === mainPath) {
         return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+      }
+      // When main points to a directory (e.g., "./lib"), resolve to dir/index.{js,ts,...}
+      if (!mainPath.match(/\.\w+$/)) {
+        for (const ext of ['.js', '.ts', '.tsx', '.mjs', '.jsx']) {
+          if (filePath === mainPath + '/index' + ext) {
+            return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+          }
+        }
       }
     }
 
@@ -170,9 +230,19 @@ function isNestedPackageMain(filePath, projectPath) {
       }
     }
 
+    // Check types/typings field (.d.ts declaration entry)
+    for (const typesField of [pkgJson.types, pkgJson.typings].filter(Boolean)) {
+      const typesPath = join(pkgDir, typesField.replace(/^\.\//, ''));
+      if (filePath === typesPath) {
+        return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+      }
+    }
+
     // When main/module points to build output (lib/, dist/, build/, out/),
     // map back to source (src/) since we analyze source files, not build output
-    const _buildDirRe = /^(lib|dist|build|out)\//;
+    const _buildDirRe = /^(lib|dist|dist-\w+|build|out)\//;
+    // Known build output format subdirs (tshy, tsup, etc.) — dist/commonjs/ → src/, dist/esm/ → src/
+    const _formatSubdirRe = /^(dist|dist-\w+)\/(commonjs|cjs|esm|browser|react-native|workerd|node|default|types)\//;
     const _srcExts = ['.ts', '.tsx', '.mts', '.js', '.mjs', '.jsx'];
     let hasBuildDirFields = false;
     for (const field of [pkgJson.main, pkgJson.module].filter(Boolean)) {
@@ -180,11 +250,17 @@ function isNestedPackageMain(filePath, projectPath) {
       if (_buildDirRe.test(fieldPath)) {
         hasBuildDirFields = true;
         // Map lib/framework.js → src/framework.ts etc.
-        const stem = fieldPath.replace(_buildDirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, '');
-        for (const ext of _srcExts) {
-          const candidate = join(pkgDir, stem + ext);
-          if (filePath === candidate) {
-            return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+        // Also handle dist/commonjs/index.js → src/index.ts (strip format subdir)
+        const stems = [fieldPath.replace(_buildDirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, '')];
+        if (_formatSubdirRe.test(fieldPath)) {
+          stems.push(fieldPath.replace(_formatSubdirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, ''));
+        }
+        for (const stem of stems) {
+          for (const ext of _srcExts) {
+            const candidate = join(pkgDir, stem + ext);
+            if (filePath === candidate) {
+              return { isMain: true, packageDir: pkgDir, packageName: pkgName };
+            }
           }
         }
       }
@@ -233,9 +309,15 @@ function isNestedPackageMain(filePath, projectPath) {
           // Also check source equivalent for build-dir exports
           const cleanExp = exp.replace(/^\.\//, '');
           if (_buildDirRe.test(cleanExp)) {
-            const stem = cleanExp.replace(_buildDirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, '');
-            for (const ext of _srcExts) {
-              if (filePath === join(pkgDir, stem + ext)) return true;
+            const stems = [cleanExp.replace(_buildDirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, '')];
+            // Also strip format subdir: dist/commonjs/index.js → src/index.ts
+            if (_formatSubdirRe.test(cleanExp)) {
+              stems.push(cleanExp.replace(_formatSubdirRe, 'src/').replace(/\.[mc]?[jt]sx?$/, ''));
+            }
+            for (const stem of stems) {
+              for (const ext of _srcExts) {
+                if (filePath === join(pkgDir, stem + ext)) return true;
+              }
             }
           }
         } else if (exp && typeof exp === 'object') {
@@ -559,6 +641,33 @@ function extractPathAliases(projectPath) {
     // Ignore build system detection errors
   }
 
+  // 9. Nested workspace discovery — sub-projects may define their own workspaces
+  // e.g., streamlit's frontend/package.json has workspaces: ["app", "lib", "connection", ...]
+  // which resolve to frontend/app, frontend/lib, frontend/connection, etc.
+  const nestedQueue = [...workspaceDirs];
+  for (const parentDir of nestedQueue) {
+    const nestedPkgPath = join(projectPath, parentDir, 'package.json');
+    if (!existsSync(nestedPkgPath)) continue;
+    try {
+      const nestedPkg = JSON.parse(readFileSync(nestedPkgPath, 'utf-8'));
+      const nestedWs = nestedPkg.workspaces;
+      if (!nestedWs) continue;
+      const patterns = Array.isArray(nestedWs) ? nestedWs : (nestedWs.packages || []);
+      for (const pattern of patterns) {
+        // Resolve workspace paths relative to the parent directory
+        const fullPattern = `${parentDir}/${pattern.replace(/\/$/, '')}`;
+        if (fullPattern.includes('*')) {
+          resolveWorkspaceGlob(fullPattern);
+        } else if (!workspaceDirs.has(fullPattern)) {
+          workspaceDirs.add(fullPattern);
+          nestedQueue.push(fullPattern);
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
   // Add all discovered workspace directories
   for (const wsDir of workspaceDirs) {
     configDirs.push({ dir: wsDir, prefix: `${wsDir}/` });
@@ -582,10 +691,11 @@ function extractPathAliases(projectPath) {
             if (mainExport) {
               const exportPath = _resolveExportTarget(mainExport);
               if (exportPath) {
-                // Convert dist path to src path
+                // Convert dist path to src path (handles dist/, dist-cjs/, dist-es/, dist/commonjs/, etc.)
                 entryPoint = exportPath
                   .replace(/^\.\//, '')
-                  .replace(/^dist\//, 'src/')
+                  .replace(/^(dist-\w+|dist)\/(commonjs|cjs|esm|browser|react-native|workerd|node|default|types)\//, 'src/')
+                  .replace(/^(dist-\w+|dist|lib|build|out)\//, 'src/')
                   .replace(/\.(c|m)?js$/, '')
                   .replace(/\.d\.(c|m)?ts$/, '');
               }
@@ -593,9 +703,15 @@ function extractPathAliases(projectPath) {
           }
           // Fallback to module/main fields
           else if (pkgJson.module) {
-            entryPoint = pkgJson.module.replace(/^\.\//, '').replace(/^dist\//, 'src/').replace(/\.(c|m)?js$/, '');
+            entryPoint = pkgJson.module.replace(/^\.\//, '')
+              .replace(/^(dist-\w+|dist)\/(commonjs|cjs|esm|browser|react-native|workerd|node|default|types)\//, 'src/')
+              .replace(/^(dist-\w+|dist|lib|build|out)\//, 'src/')
+              .replace(/\.(c|m)?js$/, '');
           } else if (pkgJson.main) {
-            entryPoint = pkgJson.main.replace(/^\.\//, '').replace(/^dist\//, 'src/').replace(/\.(c|m)?js$/, '');
+            entryPoint = pkgJson.main.replace(/^\.\//, '')
+              .replace(/^(dist-\w+|dist)\/(commonjs|cjs|esm|browser|react-native|workerd|node|default|types)\//, 'src/')
+              .replace(/^(dist-\w+|dist|lib|build|out)\//, 'src/')
+              .replace(/\.(c|m)?js$/, '');
           }
 
           // Build subpath exports map from package.json exports field
@@ -1157,6 +1273,103 @@ function findCalledExtensionMethods(content, methodToFile) {
   return [...calledFiles];
 }
 
+/**
+ * Parse .csproj files to build a project dependency graph via ProjectReferences.
+ * Returns a Set of project directories that are transitively referenced by any "app" project
+ * (a project containing Program.cs or Startup.cs).
+ * All .cs files in these directories should be treated as entry points.
+ * @param {string} projectPath - Root path of the repository
+ * @returns {Set<string>} - Set of project directory prefixes (relative to projectPath)
+ */
+function parseCsprojReferences(projectPath) {
+  const referencedDirs = new Set();
+  if (!projectPath) return referencedDirs;
+
+  let csprojFiles;
+  try {
+    csprojFiles = globSync('**/*.csproj', {
+      cwd: projectPath,
+      ignore: ['**/bin/**', '**/obj/**', '**/node_modules/**']
+    });
+  } catch { return referencedDirs; }
+
+  if (csprojFiles.length === 0) return referencedDirs;
+
+  // Build dependency graph: projectDir -> Set<referencedProjectDirs>
+  const graph = new Map();
+  const projectDirs = new Set();
+
+  for (const csprojFile of csprojFiles) {
+    const projDir = dirname(csprojFile);
+    projectDirs.add(projDir);
+
+    try {
+      const content = readFileSync(join(projectPath, csprojFile), 'utf-8');
+      const refs = new Set();
+
+      // Extract <ProjectReference Include="..\..\OtherProject\OtherProject.csproj" />
+      const refPattern = /<ProjectReference\s+Include="([^"]+)"/gi;
+      let match;
+      while ((match = refPattern.exec(content)) !== null) {
+        // Normalize Windows backslash paths to forward slash
+        const refPath = match[1].replace(/\\/g, '/');
+        // Resolve relative to the .csproj directory
+        const resolvedRef = normalize(join(projDir, refPath));
+        const refDir = dirname(resolvedRef);
+        refs.add(refDir);
+      }
+
+      graph.set(projDir, refs);
+    } catch {
+      graph.set(projDir, new Set());
+    }
+  }
+
+  // Find "app" projects (contain Program.cs or Startup.cs)
+  const appProjects = new Set();
+  for (const projDir of projectDirs) {
+    try {
+      const dirPath = join(projectPath, projDir);
+      const entries = readdirSync(dirPath);
+      if (entries.some(e => /^(Program|Startup)\.cs$/i.test(e))) {
+        appProjects.add(projDir);
+      }
+    } catch { /* skip */ }
+  }
+
+  // If no app projects found, treat ALL project dirs as potentially referenced
+  // (library repos where everything is public API)
+  if (appProjects.size === 0) {
+    for (const projDir of projectDirs) {
+      referencedDirs.add(projDir);
+    }
+    return referencedDirs;
+  }
+
+  // BFS from each app project to find all transitively referenced project dirs
+  for (const appProj of appProjects) {
+    referencedDirs.add(appProj);
+    const visited = new Set([appProj]);
+    const queue = [appProj];
+    let qi = 0;
+    while (qi < queue.length) {
+      const current = queue[qi++];
+      const refs = graph.get(current);
+      if (refs) {
+        for (const ref of refs) {
+          if (!visited.has(ref)) {
+            visited.add(ref);
+            referencedDirs.add(ref);
+            queue.push(ref);
+          }
+        }
+      }
+    }
+  }
+
+  return referencedDirs;
+}
+
 // Package.json fields that contain dynamically loaded file paths
 let DYNAMIC_PACKAGE_FIELDS = ['nodes', 'plugins', 'credentials', 'extensions', 'adapters', 'connectors'];
 
@@ -1238,11 +1451,9 @@ let DETECTED_FRAMEWORKS = new Set();
  * Detect frameworks from package.json dependencies
  * @param {Object} packageJson - Parsed package.json
  */
-export function detectFrameworks(packageJson) {
-  DETECTED_FRAMEWORKS = new Set();
-
-  if (!packageJson) return DETECTED_FRAMEWORKS;
-
+// Internal: add frameworks from a single package.json (accumulates, does not reset)
+function _addFrameworks(packageJson) {
+  if (!packageJson) return;
   const allDeps = {
     ...(packageJson.dependencies || {}),
     ...(packageJson.devDependencies || {}),
@@ -1259,6 +1470,7 @@ export function detectFrameworks(packageJson) {
 
   // Vue ecosystem
   if (allDeps['vue'] || allDeps['vue-router']) DETECTED_FRAMEWORKS.add('vue');
+  if (allDeps['nuxt'] || allDeps['nuxt3'] || allDeps['@nuxt/kit']) DETECTED_FRAMEWORKS.add('nuxt');
   if (allDeps['pinia']) DETECTED_FRAMEWORKS.add('pinia');
   if (allDeps['vuex']) DETECTED_FRAMEWORKS.add('vuex');
 
@@ -1276,7 +1488,11 @@ export function detectFrameworks(packageJson) {
 
   // ESLint config
   if (packageJson.name?.includes('eslint-config')) DETECTED_FRAMEWORKS.add('eslint-config');
+}
 
+export function detectFrameworks(packageJson) {
+  DETECTED_FRAMEWORKS = new Set();
+  _addFrameworks(packageJson);
   return DETECTED_FRAMEWORKS;
 }
 
@@ -1311,6 +1527,26 @@ function checkFrameworkEntry(filePath) {
     }
     if (/init\.([mc]?[jt]s|tsx)$/.test(filePath) || /\/app\/init\.([mc]?[jt]s|tsx)$/.test(filePath)) {
       return { isEntry: true, reason: 'Vue app initialization' };
+    }
+  }
+
+  // Nuxt auto-imports — Nuxt 3 automatically imports from these directories (recursively)
+  // Files in these dirs are used without explicit import statements
+  if (DETECTED_FRAMEWORKS.has('nuxt')) {
+    if (/\/(?:utils|helpers|lib|context)\/.*\.[mc]?[jt]sx?$/.test(filePath)) {
+      return { isEntry: true, reason: 'Nuxt auto-imported utility' };
+    }
+    if (/\/(?:store|stores)\/.*\.[mc]?[jt]sx?$/.test(filePath)) {
+      return { isEntry: true, reason: 'Nuxt/Pinia auto-imported store' };
+    }
+    if (/\/middleware\/[^/]+\.[mc]?[jt]sx?$/.test(filePath)) {
+      return { isEntry: true, reason: 'Nuxt route middleware' };
+    }
+    if (/\/components\/.*\.(vue|[mc]?[jt]sx?)$/.test(filePath)) {
+      return { isEntry: true, reason: 'Nuxt auto-imported component' };
+    }
+    if (/\/error\/.*\.[mc]?[jt]sx?$/.test(filePath)) {
+      return { isEntry: true, reason: 'Nuxt error handler' };
     }
   }
 
@@ -1597,6 +1833,10 @@ const ENTRY_POINT_PATTERNS = [
 
   // Protobuf/gRPC generated files
   /\.(pb|pb2|proto)\.(go|py|js|ts)$/,
+  /_grpc_pb\.(js|ts|d\.ts)$/,    // gRPC generated JS/TS stubs
+  /_pb2_grpc\.py$/,               // gRPC generated Python stubs
+  /_pb2\.pyi?$/,                  // protobuf generated Python type stubs
+  /_pb\.(js|ts|d\.ts)$/,         // protobuf generated JS/TS files
 
   // Next.js / Remix / etc - file-based routing
   // Match pages/app/routes at project root, under src/, or in monorepo workspace packages
@@ -1634,6 +1874,10 @@ const ENTRY_POINT_PATTERNS = [
   // Monorepo workspace routes
   /^apps\/[^/]+\/routes\//,
   /^apps\/[^/]+\/src\/routes\//,
+  // SvelteKit convention files (file-based routing, loaded by framework at runtime)
+  /\+(?:page|layout|server|error)(?:\.server)?\.([mc]?[jt]s|[jt]sx|svelte)$/,
+  // Framework build entry points (Qwik, Vite, etc. — loaded by build system)
+  /entry\.(?:ssr|dev|preview|express|cloudflare|vercel|deno|bun|fastify|node)\.([mc]?[jt]sx?)$/,
   // Next.js instrumentation files (loaded by Next.js at startup)
   /instrumentation(-client)?\.([mc]?[jt]s|[jt]sx)$/,
 
@@ -1706,8 +1950,11 @@ const ENTRY_POINT_PATTERNS = [
   /^sandbox\//,
   /\/demos?\//,
   /^demos?\//,
-  /\/samples?\//,
-  /^samples?\//,
+  /\/samples?(-\w+)?\//,
+  /^samples?(-\w+)?\//,
+  // Starter/template apps (standalone reference implementations)
+  /\/starters?\//,
+  /^starters?\//,
 
   // Benchmark scripts (standalone performance tests)
   /\/bench(marks?)?\//,
@@ -1833,6 +2080,7 @@ const ENTRY_POINT_PATTERNS = [
   /routes\.py$/,
   /endpoints\.py$/,
   /config\.py$/,
+  /conf\.py$/,         // Sphinx/Python config files loaded dynamically
   /deps\.py$/,         // FastAPI dependencies
   /schemas\.py$/,      // Pydantic schemas
   // FastAPI/Python-specific directories (only .py files)
@@ -1850,6 +2098,11 @@ const ENTRY_POINT_PATTERNS = [
   /\.pyi$/,
   // Typeshed directory (Python type stubs collection used by mypy, pyright, etc.)
   /typeshed\//,
+  // Top-level Python package __init__.py files (e.g., rllib/__init__.py, src/mypackage/__init__.py)
+  // These are package roots that may not be imported by anything else in the repo
+  /^[^/]+\/__init__\.py$/,            // depth 1: rllib/__init__.py
+  /^[^/]+\/[^/]+\/__init__\.py$/,     // depth 2: python/ray/__init__.py, src/mypackage/__init__.py
+
   // Python package setup (build entry points, not imported)
   /setup\.py$/,
   /setup\.cfg$/,
@@ -1869,6 +2122,11 @@ const ENTRY_POINT_PATTERNS = [
   /.*ITCase\.(java|kt)$/,     // Integration test cases
   // Resource/config files that trigger class loading
   /package-info\.java$/,
+  // Java/Kotlin test case input dirs (compiled test inputs, not imported - e.g. spotbugs testCases/)
+  /[Tt]est[Cc]ases?\/.*\.(java|kt)$/,
+  /[Pp]lugin-test\/.*\.(java|kt)$/,
+  // Java integration test resource dirs (Maven/Gradle resources dirs with .java/.kt files)
+  /src\/(it|test)\/resources\/.*\.(java|kt)$/,
   // SPI service files (META-INF/services)
   /META-INF\/services\//,
   /META-INF\/.*\.xml$/,
@@ -1883,8 +2141,27 @@ const ENTRY_POINT_PATTERNS = [
   // ASP.NET Controllers
   /.*Controller\.cs$/,
   // Tests
-  /.*Tests\.cs$/,
-  /.*Test\.cs$/,
+  /.*Tests?\.cs$/,
+  // Extension methods / DI registration
+  /.*Extensions?\.cs$/,
+  // ASP.NET middleware
+  /.*Middleware\.cs$/,
+  // DI modules (Autofac, etc.)
+  /.*Module\.cs$/,
+  // MediatR/CQRS handlers
+  /.*Handler\.cs$/,
+  // Custom attributes (loaded by reflection)
+  /.*Attribute\.cs$/,
+  // SignalR hubs
+  /.*Hub\.cs$/,
+  // ASP.NET action/result filters
+  /.*Filter\.cs$/,
+  // JSON/XML converters
+  /.*Converter\.cs$/,
+  // C# 10 global usings
+  /GlobalUsings\.cs$/,
+  // Assembly metadata
+  /AssemblyInfo\.cs$/,
 
   // === Go Entry Points ===
   // main.go in any package (includes cmd/*/main.go)
@@ -2026,6 +2303,7 @@ const ENTRY_POINT_PATTERNS = [
 
   // === Documentation/Debug/Tools ===
   /\/docs?\//, /^docs?\//, /-docs\//, /_docs\//,
+  /\/docs_src\//, /^docs_src\//,
   /\/documentation\//, /^documentation\//,
   /\/debug\//, /^debug\//,
   /\/tools\//, /^tools\//,
@@ -2051,6 +2329,10 @@ const ENTRY_POINT_PATTERNS = [
   // === Reporters ===
   /\/reporters\//,
 
+  // === Editor/IDE plugin dirs (snippets, extensions loaded dynamically at runtime) ===
+  /\/snippets\/[^/]+\.[mc]?[jt]sx?$/,
+  /\/ext\/[^/]+\.[mc]?[jt]sx?$/,
+
   // === Server-side Rendering ===
   /\/server\//, /^server\//,
 
@@ -2072,8 +2354,14 @@ const ENTRY_POINT_PATTERNS = [
   /^tests\/[^/]+\.rs$/,
 
   // === Rust trybuild/compile-test files ===
-  /\/tests?\/(ui|ui-fail[^/]*|trybuild|compile-fail|compile-test)\//, /^tests?\/(ui|ui-fail[^/]*|trybuild|compile-fail|compile-test)\//,
+  // Includes ui/, trybuild/, compile-fail/, fail/, pass/, and macro test dirs
+  /\/tests?\/(ui|ui-fail[^/]*|trybuild|compile-fail|compile-test|fail|pass|macros?|markup)\//, /^tests?\/(ui|ui-fail[^/]*|trybuild|compile-fail|compile-test|fail|pass|macros?|markup)\//,
   /\/tests?\/[^/]+\/(pass|fail)\//, /^tests?\/[^/]+\/(pass|fail)\//,
+  // Rust formatting tool fixtures — .rs files used as test input/expected-output data (rustfmt, rustfix)
+  /\/tests?\/(source|target)\/.*\.rs$/, /^tests?\/(source|target)\//,
+  // Deep test fixture subdirectories — .rs files nested in named subdirs under tests/
+  // e.g., tests/generate_migrations/diff_add_table/schema.rs, tests/print_schema/*/expected.rs
+  /\/tests?\/.+\/.+\/.*\.rs$/, /^tests?\/.+\/.+\/.*\.rs$/,
 
   // === Playground/dev directories (development environments) ===
   /\/playgrounds?\//, /^playgrounds?\//,
@@ -2098,8 +2386,68 @@ const ENTRY_POINT_PATTERNS = [
   /^lib\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
 
   // === modules/ npm sub-packages ===
-  /^modules\/[^/]+\/[^/]+\.([mc]?[jt]s|[jt]sx)$/
+  /^modules\/[^/]+\/[^/]+\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Browser extension entry points (loaded via manifest.json) ===
+  /(?:^|\/)(?:background|content[_-]?script|popup|options|devtools|sidebar|panel)\.[mc]?[jt]sx?$/,
+
+  // === ESLint test fixtures (compiled but not imported — used as lint rule test cases) ===
+  /\.test-lint\./,
+  /eslint.*\/tests?\/.*fixtures?\//,
+
+  // === Static assets embedded in packages (not imported, loaded at runtime as data) ===
+  // Theme/package static JS assets (Sphinx themes, docs tooling)
+  /\/themes?\/[^/]+\/static\//,
+  // Minified/non-minified JS asset directories (stemmer JS files etc.)
+  /\/(minified|non-minified)-js\//,
+
+  // === E2E test app files (standalone applications used by test runners) ===
+  /\/e2e\/.*\/src\//,
+  /^e2e\/.*\/src\//,
+
+  // === Vendored runtime patches (injected into node_modules, not imported) ===
+  /\/extra\/[^/]+\/gen-[^/]+\.js$/,
+
+  // === React JSX runtime files (loaded by JSX transform, not imported explicitly) ===
+  /jsx-runtime\.([mc]?[jt]s|[jt]sx)$/,
+  /jsx-dev-runtime\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Gatsby convention files (loaded by Gatsby framework at build time) ===
+  /gatsby-node\.([mc]?[jt]s|[jt]sx)$/,
+  /gatsby-config\.([mc]?[jt]s|[jt]sx)$/,
+  /gatsby-browser\.([mc]?[jt]s|[jt]sx)$/,
+  /gatsby-ssr\.([mc]?[jt]s|[jt]sx)$/,
+
+  // === Ember.js convention files (auto-discovered by Ember CLI at runtime) ===
+  /ember-cli-build\.js$/,
+  /\/app\/services\/[^/]+\.([jt]s)$/,
+  /\/app\/serializers\/[^/]+\.([jt]s)$/,
+  /\/app\/initializers\/[^/]+\.([jt]s)$/,
+  /\/app\/instance-initializers\/[^/]+\.([jt]s)$/,
+  /\/app\/adapters\/[^/]+\.([jt]s)$/,
+  /\/app\/transforms\/[^/]+\.([jt]s)$/,
+
+  // === Generated Go mock files (mockery, gomock, etc.) ===
+  /\/grpcmocks?\//, /^grpcmocks?\//,
+  /\/mock_[^/]+\.go$/,
+  /\/mocks?\/[^/]+\.go$/,
+
+  // === Go generated code (detected by go generate convention) ===
+  /zz_generated[_.].*\.go$/,
+
+  // === Generated TypeScript/JavaScript (OpenAPI, GraphQL codegen, etc.) ===
+  /\.gen\.([mc]?[jt]s|[jt]sx)$/,
+  /\/openapi-gen\//, /^openapi-gen\//,
+  /\/__generated__\//, /^__generated__\//,
+
+  // === Preconstruct/build-time conditional modules ===
+  /\/conditions\/(true|false|browser|worker|node)\.[mc]?[jt]sx?$/,
+
+  // === Website/site directories (documentation sites, not library code) ===
+  /\/website\//, /^website\//,
+  /\/site\/src\//, /^site\/src\//,
 ];
+
 
 /**
  * Extract JS/TS file references from npm scripts
@@ -2541,7 +2889,7 @@ function isEntryPoint(filePath, packageJson = {}, projectPath = null, htmlEntryP
   // Heuristic: Files in directories with "dead", "deprecated", "legacy", "old", "unused"
   // in the name are likely not active code - don't treat as entry points
   // Also check file names containing these words, or files named exactly "dead.ext"
-  const deadDirPatterns = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)/i;
+  const deadDirPatterns = /(^|\/)(dead[-_]|deprecated[-_]|legacy[-_]|old[-_]|unused[-_])/i;
   const deadFilePatterns = /(^|\/)(dead[-_]|deprecated[-_]|legacy[-_]|old[-_]|unused[-_])[^/]*\.[^/]+$/i;
   const deadFileExact = /(^|\/)dead\.[^/]+$/i;  // matches dead.go, dead.py, etc.
   if (deadDirPatterns.test(filePath) || deadFilePatterns.test(filePath) || deadFileExact.test(filePath)) {
@@ -3503,6 +3851,54 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
     fileExports.set(filePath, file.exports || []);
   }
 
+  // Track per-export usage: Map<filePath, Map<exportName, [{importerFile, importType}]>>
+  const exportUsageMap = new Map();
+
+  /**
+   * Record that an importer consumed specific exports from a target file.
+   */
+  function recordExportUsage(targetFile, importerFile, specifiers, importType) {
+    if (!targetFile || !importerFile) return;
+
+    let fileUsage = exportUsageMap.get(targetFile);
+    if (!fileUsage) {
+      fileUsage = new Map();
+      exportUsageMap.set(targetFile, fileUsage);
+    }
+
+    // Determine what symbols are consumed
+    if (!specifiers || specifiers.length === 0) {
+      if (importType === 'esm') {
+        // Side-effect import: import './module' — file reached but no named exports consumed
+        const key = '__SIDE_EFFECT__';
+        let usages = fileUsage.get(key);
+        if (!usages) { usages = []; fileUsage.set(key, usages); }
+        usages.push({ importerFile, importType });
+      } else {
+        // CJS/dynamic — assume all exports consumed (conservative)
+        const key = '__ALL__';
+        let usages = fileUsage.get(key);
+        if (!usages) { usages = []; fileUsage.set(key, usages); }
+        usages.push({ importerFile, importType });
+      }
+      return;
+    }
+
+    for (const spec of specifiers) {
+      let key;
+      if (spec.type === 'namespace') {
+        key = '*'; // import * as ns — all exports consumed
+      } else if (spec.type === 'default') {
+        key = 'default';
+      } else {
+        key = spec.name || spec;
+      }
+      let usages = fileUsage.get(key);
+      if (!usages) { usages = []; fileUsage.set(key, usages); }
+      usages.push({ importerFile, importType });
+    }
+  }
+
   // Build a map from file path to its Rust mod declarations
   const fileMods = new Map();
   for (const file of jsAnalysis) {
@@ -4186,6 +4582,21 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
           if (!visited.has(resolved)) {
             queue.push(resolved);
           }
+          // Record per-export usage
+          if (imp.type === 'esm' && imp.specifiers) {
+            recordExportUsage(resolved, current, imp.specifiers, 'esm');
+          } else if (isPythonFile && imp.type === 'from' && imp.name) {
+            // Python: from X import name — synthesize specifier
+            const pySpec = imp.name === '*'
+              ? [{ name: '*', type: 'namespace' }]
+              : [{ name: imp.name, type: 'named' }];
+            recordExportUsage(resolved, current, pySpec, 'from');
+          } else if (imp.type === 'commonjs' || imp.type === 'dynamic-import' || imp.type === 'require-context') {
+            recordExportUsage(resolved, current, null, imp.type || 'commonjs');
+          } else if (!imp.specifiers || imp.specifiers.length === 0) {
+            // Unknown type with no specifiers — conservative: all consumed
+            recordExportUsage(resolved, current, null, imp.type || 'unknown');
+          }
         }
 
         // For Python "from package import X" statements, X could be a submodule (file)
@@ -4198,6 +4609,8 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
             if (!visited.has(resolved)) {
               queue.push(resolved);
             }
+            // Python submodule resolution: the import resolved to a file, mark all exports used
+            recordExportUsage(resolved, current, null, 'from-submodule');
           }
         }
       }
@@ -4219,7 +4632,7 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
       // Follow Rust mod declarations (mod utils; makes utils.rs or utils/mod.rs reachable)
       // Skip mod declarations that have "dead" patterns in the name (they're likely unused)
       const mods = fileMods.get(current) || [];
-      const deadModPattern = /^(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)/i;
+      const deadModPattern = /^(dead[-_]|deprecated[-_]|legacy[-_]|old[-_]|unused[-_])/i;
       for (const mod of mods) {
         // Skip mods with dead patterns in the name
         if (deadModPattern.test(mod.name)) {
@@ -4277,17 +4690,82 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
         }
       }
 
-      // Follow Rust automod::dir!("path") macros — includes all .rs files in a directory as modules
+      // Follow Rust proc macros that scan directories for .rs files at compile time
+      // Handles: automod::dir!("path"), declare_group_from_fs!, declare_lint_group!, etc.
+      // Also handles r#keyword raw identifier syntax: mod r#if → if.rs
       if (current.endsWith('.rs') && projectPath) {
         try {
           const rsContent = readFileSync(join(projectPath, current), 'utf-8');
+
+          // Resolve nested inline module declarations:
+          // pub(crate) mod eslint { pub mod accessor_pairs; }
+          // → accessor_pairs resolves to rules/eslint/accessor_pairs.rs (not rules/accessor_pairs.rs)
+          // Strategy: Parse content for inline mod blocks (ending with {), track brace depth,
+          // and resolve nested external mods (ending with ;) with parent inline mod as prefix dir.
+          {
+            const currentDir = dirname(current);
+            const currentBase = basename(current);
+            const baseDir = (currentBase.endsWith('.rs') && currentBase !== 'mod.rs' && currentBase !== 'lib.rs' && currentBase !== 'main.rs')
+              ? join(currentDir, currentBase.replace(/\.rs$/, ''))
+              : currentDir;
+
+            // Track brace depth and inline mod stack
+            const modStack = []; // [{name, startDepth}]
+            let braceDepth = 0;
+            // Tokenize: find mod declarations, open braces, close braces
+            const tokenRe = /(?:(?:pub(?:\([^)]+\))?\s+)?mod\s+(\w+)\s*([;{]))|([{}])/g;
+            let tok;
+            while ((tok = tokenRe.exec(rsContent)) !== null) {
+              if (tok[3] === '{') {
+                braceDepth++;
+              } else if (tok[3] === '}') {
+                braceDepth--;
+                // Pop any inline mods that ended at this depth
+                while (modStack.length > 0 && modStack[modStack.length - 1].startDepth >= braceDepth) {
+                  modStack.pop();
+                }
+              } else if (tok[1]) {
+                // mod declaration
+                const modName = tok[1];
+                const ending = tok[2];
+                if (ending === '{') {
+                  // Inline module — push to stack and count its opening brace
+                  braceDepth++;
+                  modStack.push({ name: modName, startDepth: braceDepth });
+                } else if (ending === ';' && modStack.length > 0) {
+                  // External mod inside an inline block — resolve with prefix
+                  const prefix = modStack.map(m => m.name).join('/');
+                  const nestedCandidates = [
+                    join(baseDir, prefix, modName + '.rs'),
+                    join(baseDir, prefix, modName, 'mod.rs')
+                  ];
+                  for (const c of nestedCandidates) {
+                    const nc = c.replace(/\\/g, '/');
+                    if (fileImports.has(nc) && !visited.has(nc)) {
+                      queue.push(nc);
+                    }
+                  }
+                }
+              }
+            }
+          }
+
           // Match automod::dir!("subdir") or automod::dir!(".")
           const automodRe = /automod::dir!\s*\(\s*"([^"]+)"\s*\)/g;
           let automodMatch;
           while ((automodMatch = automodRe.exec(rsContent)) !== null) {
             const automodDir = automodMatch[1];
             const currentDir = dirname(current);
-            const targetDir = automodDir === '.' ? currentDir : join(currentDir, automodDir).replace(/\\/g, '/');
+            // automod::dir! resolves relative to Cargo.toml manifest dir (project root),
+            // NOT relative to the current file. Try project-root-relative first, then file-relative as fallback.
+            const rootRelativeDir = automodDir === '.' ? currentDir : automodDir.replace(/\\/g, '/');
+            const fileRelativeDir = automodDir === '.' ? currentDir : join(currentDir, automodDir).replace(/\\/g, '/');
+            // Check which directory has files — prefer root-relative
+            const rootDirFiles = dirIndex ? dirIndex.get(rootRelativeDir) : null;
+            const fileDirFiles = dirIndex ? dirIndex.get(fileRelativeDir) : null;
+            const targetDir = (rootDirFiles && rootDirFiles.size > 0) ? rootRelativeDir
+              : (fileDirFiles && fileDirFiles.size > 0) ? fileRelativeDir
+              : rootRelativeDir;
             // Use dirIndex if available, otherwise scan fileImports keys
             const dirFiles = dirIndex ? dirIndex.get(targetDir) : null;
             if (dirFiles) {
@@ -4301,6 +4779,190 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
               for (const filePath of fileImports.keys()) {
                 if (filePath.endsWith('.rs') && dirname(filePath) === targetDir && !visited.has(filePath)) {
                   queue.push(filePath);
+                }
+              }
+            }
+          }
+
+          // Detect Rust proc macros that scan directories at compile time (e.g., biome's declare_group_from_fs!)
+          // Pattern: macro invocation in a file means "all .rs files in my sibling directory are modules"
+          // e.g., crates/biome_js_analyze/src/lint/correctness.rs contains declare_group_from_fs!
+          // which scans correctness/ directory for .rs files
+          if (/declare_(?:group_from_fs|lint_group)|include_dir!\s*\(|auto_mod!\s*\(/.test(rsContent)) {
+            const currentDir = dirname(current);
+            const moduleName = current.replace(/\.rs$/, '').split('/').pop();
+            // The macro typically scans a subdirectory named after the module
+            const targetDir = `${currentDir}/${moduleName}`;
+            const dirFiles = dirIndex ? dirIndex.get(targetDir) : null;
+            if (dirFiles) {
+              for (const f of dirFiles) {
+                if (f.endsWith('.rs') && !visited.has(f)) {
+                  queue.push(f);
+                }
+              }
+            }
+          }
+
+          // Handle Rust raw identifier mod declarations: mod r#if; → if.rs
+          const rawIdentRe = /\bmod\s+r#(\w+)\s*;/g;
+          let rawMatch;
+          while ((rawMatch = rawIdentRe.exec(rsContent)) !== null) {
+            const modName = rawMatch[1];
+            const currentDir = dirname(current);
+            const candidates = [
+              `${currentDir}/${modName}.rs`,
+              `${currentDir}/${modName}/mod.rs`
+            ];
+            for (const c of candidates) {
+              if (!visited.has(c) && (dirIndex?.get(dirname(c))?.has(c) || fileImports.has(c))) {
+                queue.push(c);
+              }
+            }
+          }
+
+          // Handle Rust include!() macro: include!("../doctest_setup.rs") → resolve path
+          const includeRe = /include!\s*\(\s*["']([^"']+\.rs)["']\s*\)/g;
+          let inclMatch;
+          while ((inclMatch = includeRe.exec(rsContent)) !== null) {
+            const inclPath = inclMatch[1];
+            const currentDir = dirname(current);
+            // Try relative to current file
+            const resolved = join(currentDir, inclPath).replace(/\\/g, '/');
+            const normalised = resolved.replace(/\/\.\.\//g, () => {
+              // Simple parent dir resolution
+              return '/../';
+            });
+            // Normalise path — use a simple approach
+            const parts = resolved.split('/');
+            const normalParts = [];
+            for (const p of parts) {
+              if (p === '..') normalParts.pop();
+              else if (p !== '.') normalParts.push(p);
+            }
+            const finalPath = normalParts.join('/');
+            if (!visited.has(finalPath) && (dirIndex?.get(dirname(finalPath))?.has(finalPath) || fileImports.has(finalPath))) {
+              queue.push(finalPath);
+            }
+          }
+        } catch { /* skip read errors */ }
+      }
+
+      // Follow Python __getattr__ + lazy import dict patterns (e.g., langchain's create_importer)
+      // Pattern: __init__.py files define __getattr__ + a dict mapping names to dotted module paths
+      // The dict values are dynamically imported at runtime via importlib.import_module()
+      if (isPythonFile && current.endsWith('__init__.py') && projectPath) {
+        try {
+          const pyContent = readFileSync(join(projectPath, current), 'utf-8');
+          if (pyContent.includes('__getattr__')) {
+            // Extract dotted module paths from dict-like structures
+            // Matches: "module.path.name" in dict values, list items, or _module_lookup patterns
+            const dottedModuleRe = /["'](\w+(?:\.\w+){1,})["']/g;
+            let pyMatch;
+            while ((pyMatch = dottedModuleRe.exec(pyContent)) !== null) {
+              const dottedPath = pyMatch[1];
+              const resolved = resolveImport(current, dottedPath);
+              for (const r of resolved) {
+                if (!visited.has(r)) {
+                  queue.push(r);
+                }
+              }
+            }
+            // When __init__.py has __getattr__, ALL sibling .py modules are reachable
+            // Python allows `from package.submodule import X` which bypasses __init__.py
+            // and loads the submodule directly (e.g., langchain deprecation shims)
+            const pkgDir = dirname(current);
+            const siblingFiles = dirIndex ? dirIndex.get(pkgDir) : null;
+            if (siblingFiles) {
+              for (const f of siblingFiles) {
+                if (f.endsWith('.py') && !f.endsWith('__init__.py') && !visited.has(f)) {
+                  queue.push(f);
+                }
+              }
+            }
+            // Also recurse into sub-packages: when __init__.py has __getattr__,
+            // sub-packages are also importable (from package.sub.module import X)
+            if (dirIndex) {
+              for (const [dir, files] of dirIndex) {
+                if (dir.startsWith(pkgDir + '/') && dir !== pkgDir) {
+                  for (const f of files) {
+                    if (f.endsWith('__init__.py') && !visited.has(f)) {
+                      queue.push(f);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch { /* skip read errors */ }
+      }
+
+      // Follow Python import_module() / importlib.import_module() patterns
+      // Sphinx uses import_module('sphinx.search.da.SearchDanish') and import_module('sphinx.directives.other')
+      if (isPythonFile && projectPath) {
+        try {
+          const pyContent = readFileSync(join(projectPath, current), 'utf-8');
+          if (pyContent.includes('import_module')) {
+            const dottedModuleRe = /["'](\w+(?:\.\w+){1,})["']/g;
+            let pyMatch;
+            while ((pyMatch = dottedModuleRe.exec(pyContent)) !== null) {
+              const dottedPath = pyMatch[1];
+              const resolved = resolveImport(current, dottedPath);
+              for (const r of resolved) {
+                if (!visited.has(r)) {
+                  queue.push(r);
+                }
+              }
+            }
+          }
+        } catch { /* skip read errors */ }
+      }
+
+      // Follow Svelte component imports: parse <script> blocks for import statements
+      // This handles .svelte files that import .ts/.js modules (e.g., gradio imageeditor)
+      if (current.endsWith('.svelte') && projectPath) {
+        try {
+          const svelteContent = readFileSync(join(projectPath, current), 'utf-8');
+          // Extract <script> block content
+          const scriptBlockRe = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+          let scriptMatch;
+          while ((scriptMatch = scriptBlockRe.exec(svelteContent)) !== null) {
+            const scriptContent = scriptMatch[1];
+            // Extract import paths from script content
+            const importRe = /(?:import|from)\s+['"]([^'"]+)['"]/g;
+            let importMatch;
+            while ((importMatch = importRe.exec(scriptContent)) !== null) {
+              const importPath = importMatch[1];
+              if (importPath.startsWith('.')) {
+                const resolved = resolveImport(current, importPath);
+                for (const r of resolved) {
+                  if (!visited.has(r)) {
+                    queue.push(r);
+                  }
+                }
+              }
+            }
+          }
+        } catch { /* skip read errors */ }
+      }
+
+      // Follow Vue SFC imports: parse <script> blocks for import statements
+      if (current.endsWith('.vue') && projectPath) {
+        try {
+          const vueContent = readFileSync(join(projectPath, current), 'utf-8');
+          const scriptBlockRe = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+          let scriptMatch;
+          while ((scriptMatch = scriptBlockRe.exec(vueContent)) !== null) {
+            const scriptContent = scriptMatch[1];
+            const importRe = /(?:import|from)\s+['"]([^'"]+)['"]/g;
+            let importMatch;
+            while ((importMatch = importRe.exec(scriptContent)) !== null) {
+              const importPath = importMatch[1];
+              if (importPath.startsWith('.')) {
+                const resolved = resolveImport(current, importPath);
+                for (const r of resolved) {
+                  if (!visited.has(r)) {
+                    queue.push(r);
+                  }
                 }
               }
             }
@@ -4375,7 +5037,68 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
     }
   }
 
-  return reachable;
+  // Propagate export usage through re-export chains
+  // e.g., if barrel.ts re-exports { foo } from './source.ts' and foo is consumed from barrel,
+  // then foo should be marked as consumed in source.ts too
+  for (let pass = 0; pass < 5; pass++) {
+    let changed = false;
+    for (const [filePath, exports] of fileExports) {
+      const barrelUsage = exportUsageMap.get(filePath);
+      if (!barrelUsage) continue;
+
+      for (const exp of exports) {
+        if (!exp.sourceModule) continue; // Only process re-exports
+
+        const resolvedSources = resolveImport(filePath, exp.sourceModule);
+        for (const sourceFile of resolvedSources) {
+          let sourceUsage = exportUsageMap.get(sourceFile);
+
+          if (exp.name === '*' && exp.type === 'reexport-all') {
+            // export * from './source' — propagate all named usages that aren't
+            // direct exports of the barrel file itself
+            const barrelDirectExports = new Set();
+            for (const e of exports) {
+              if (!e.sourceModule && e.name !== '*') barrelDirectExports.add(e.name);
+            }
+
+            for (const [symbolName, usages] of barrelUsage) {
+              if (symbolName === '__SIDE_EFFECT__') continue;
+              if (symbolName === '__ALL__' || symbolName === '*') {
+                // All exports consumed from barrel — propagate to source
+                if (!sourceUsage) { sourceUsage = new Map(); exportUsageMap.set(sourceFile, sourceUsage); }
+                if (!sourceUsage.has('__ALL__')) {
+                  sourceUsage.set('__ALL__', [...usages]);
+                  changed = true;
+                }
+                continue;
+              }
+              // Named symbol: propagate if not a direct export of the barrel
+              if (barrelDirectExports.has(symbolName)) continue;
+              if (!sourceUsage) { sourceUsage = new Map(); exportUsageMap.set(sourceFile, sourceUsage); }
+              if (!sourceUsage.has(symbolName)) {
+                sourceUsage.set(symbolName, [...usages]);
+                changed = true;
+              }
+            }
+          } else {
+            // export { foo } from './source' — propagate if foo is consumed from barrel
+            const consumed = barrelUsage.get(exp.name);
+            const allConsumed = barrelUsage.has('__ALL__') || barrelUsage.has('*');
+            if (consumed || allConsumed) {
+              if (!sourceUsage) { sourceUsage = new Map(); exportUsageMap.set(sourceFile, sourceUsage); }
+              if (!sourceUsage.has(exp.name)) {
+                sourceUsage.set(exp.name, consumed ? [...consumed] : (barrelUsage.get('__ALL__') || barrelUsage.get('*') || []).map(u => ({ ...u })));
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+    if (!changed) break;
+  }
+
+  return { reachable, exportUsageMap };
 }
 
 /**
@@ -4453,6 +5176,37 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
 
   // Detect frameworks from package.json for framework-specific entry points
   detectFrameworks(packageJson);
+
+  // Also detect frameworks from workspace sub-packages (monorepo support)
+  // e.g., nocodb has nuxt in packages/nc-gui/package.json, not the root
+  // Use _addFrameworks to accumulate rather than replace
+  if (projectPath) {
+    const { workspacePackages: wpkgs } = extractPathAliases(projectPath);
+    for (const [, pkg] of wpkgs) {
+      const subPkgPath = join(projectPath, pkg.dir, 'package.json');
+      try {
+        const subPkg = JSON.parse(readFileSync(subPkgPath, 'utf-8'));
+        _addFrameworks(subPkg);
+      } catch { /* ignore */ }
+    }
+    // Also detect Nuxt by nuxt.config.ts presence (covers cases where nuxt isn't a direct dep)
+    try {
+      const topEntries = readdirSync(projectPath, { withFileTypes: true });
+      for (const entry of topEntries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+          if (existsSync(join(projectPath, entry.name, 'nuxt.config.ts')) ||
+              existsSync(join(projectPath, entry.name, 'nuxt.config.js'))) {
+            DETECTED_FRAMEWORKS.add('nuxt');
+            DETECTED_FRAMEWORKS.add('vue');
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Parse .csproj ProjectReferences for C#/.NET projects
+  // This builds a transitive dependency graph so all files in referenced projects are entry points
+  const csprojReferencedDirs = parseCsprojReferences(projectPath);
 
   // Set up dynamic package.json fields from config
   const dynamicPackageFields = config.dynamicPackageFields || config.deadCode?.dynamicPackageFields ||
@@ -4567,6 +5321,18 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     }
   }
 
+  // Build C# namespace-to-files map for same-namespace grouping
+  // In C#, all files in the same namespace can reference each other implicitly
+  const namespaceToFiles = new Map();
+  for (const file of analysisFiles) {
+    const filePath = file.file?.relativePath || file.file;
+    if (filePath.endsWith('.cs') && file.metadata?.namespace) {
+      const ns = file.metadata.namespace;
+      if (!namespaceToFiles.has(ns)) namespaceToFiles.set(ns, []);
+      namespaceToFiles.get(ns).push(filePath);
+    }
+  }
+
   // Set of all known class names (for C# class reference detection)
   const knownClassNames = new Set(classToFile.keys());
 
@@ -4606,6 +5372,19 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     }
   }
 
+  // Add same-namespace links: all .cs files in the same namespace connect to each other
+  // This ensures that when one file in a namespace is reachable, all siblings are too
+  for (const [, files] of namespaceToFiles) {
+    if (files.length < 2 || files.length > 200) continue; // skip trivial or huge namespaces
+    for (const file of files) {
+      const existing = csharpFileRefs.get(file) || new Set();
+      for (const sibling of files) {
+        if (sibling !== file) existing.add(sibling);
+      }
+      if (existing.size > 0) csharpFileRefs.set(file, existing);
+    }
+  }
+
   // A10: Free content strings from parsed files — DI/C# analysis above is the last consumer.
   // Content will be re-read from disk only for dead files (small subset) below.
   // This frees ~250MB (50K × 5KB) from the heap mid-pipeline.
@@ -4623,11 +5402,32 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     // Heuristic: Files in directories/names with "dead", "deprecated", "legacy", etc.
     // are likely not active code - skip treating as entry points
     // Also catch files named exactly "dead.ext" (common in Go: dead.go)
-    const deadPatterns = /(^|\/)(dead[-_]?|deprecated[-_]?|legacy[-_]?|old[-_]?|unused[-_]?)/i;
+    const deadPatterns = /(^|\/)(dead[-_]|deprecated[-_]|legacy[-_]|old[-_]|unused[-_])/i;
     const deadFileExact = /(^|\/)dead\.[^/]+$/i;  // matches dead.go, dead.py, etc.
     if (deadPatterns.test(filePath) || deadFileExact.test(filePath)) {
       // Don't mark as entry point, let it be analyzed for dead code
       continue;
+    }
+
+    // C#/.NET: Mark all .cs files in transitively-referenced project directories as entry points
+    if (filePath.endsWith('.cs') && csprojReferencedDirs.size > 0) {
+      const fileDir = dirname(filePath);
+      let inReferencedProject = false;
+      for (const refDir of csprojReferencedDirs) {
+        if (fileDir === refDir || fileDir.startsWith(refDir + '/')) {
+          inReferencedProject = true;
+          break;
+        }
+      }
+      if (inReferencedProject) {
+        entryPointFiles.add(filePath);
+        results.entryPoints.push({
+          file: filePath,
+          reason: 'In .csproj-referenced project directory',
+          isDynamic: false
+        });
+        continue;
+      }
     }
 
     // Check multi-language metadata for entry point indicators
@@ -4792,11 +5592,25 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     // (e.g., store/dist/store, compat/dist/compat)
     function _distToSrcCandidates(rawPath) {
       const candidates = [rawPath];
+      // Leading dist-cjs/, dist-es/, dist-types/ etc. (AWS SDK v3 pattern)
+      if (/^dist-\w+\//.test(rawPath)) {
+        candidates.push(rawPath.replace(/^dist-\w+\//, 'src/'));
+        candidates.push(rawPath.replace(/^dist-\w+\//, ''));
+      }
+      // Leading dist/ with format subdir (tshy pattern): dist/commonjs/index → src/index
+      if (/^dist\/(commonjs|cjs|esm|browser|react-native|workerd|node|default|types)\//.test(rawPath)) {
+        candidates.push(rawPath.replace(/^dist\/(commonjs|cjs|esm|browser|react-native|workerd|node|default|types)\//, 'src/'));
+      }
       // Leading dist/
       if (/^dist\//.test(rawPath)) {
         candidates.push(rawPath.replace(/^dist\//, 'src/'));
         candidates.push(rawPath.replace(/^dist\//, ''));
         candidates.push(rawPath.replace(/^dist\/([^/]+)\//, '$1/src/'));
+      }
+      // Nested dist-*/ (e.g., packages/foo/dist-cjs/index → packages/foo/src/index)
+      if (/\/dist-\w+\//.test(rawPath)) {
+        candidates.push(rawPath.replace(/\/dist-\w+\//, '/src/'));
+        candidates.push(rawPath.replace(/\/dist-\w+\//, '/'));
       }
       // Nested dist/ (e.g., store/dist/store → store/src/store)
       if (/\/dist\//.test(rawPath)) {
@@ -4817,7 +5631,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       // e.g., web/storage/dist/storage → web/storage/src/storage (miss) → web/storage/src/index (hit)
       const srcDirs = new Set();
       for (const candidate of candidates) {
-        const fullPath = `${pkgDir}/${candidate}`;
+        const fullPath = pkgDir ? `${pkgDir}/${candidate}` : candidate;
         const noExt = fullPath.replace(/\.([mc]?[jt]s|[jt]sx)$/, '');
         const matches = allFileNoExt.get(noExt) || allFileNoExt.get(fullPath + '/index') || allFileNoExt.get(noExt + '/index') || [];
         for (const fp of matches) {
@@ -4839,7 +5653,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       }
       // Fallback: try src/index in the mapped directory
       for (const srcDir of srcDirs) {
-        const indexPath = `${pkgDir}/${srcDir}/index`;
+        const indexPath = pkgDir ? `${pkgDir}/${srcDir}/index` : `${srcDir}/index`;
         const matches = allFileNoExt.get(indexPath) || [];
         for (const fp of matches) {
           if (!entryPointFiles.has(fp)) {
@@ -4883,6 +5697,26 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
         }
       } catch { /* ignore */ }
     }
+    // Also process root package.json subpath exports (non-workspace single packages like hono)
+    // e.g., hono's package.json has exports: { "./jsx/dom": { import: "./dist/jsx/dom/index.js" } }
+    // which should map to src/jsx/dom/index.ts as an entry point
+    const rootPkgJsonPath = join(projectPath, 'package.json');
+    try {
+      const rootPkgJson = JSON.parse(readFileSync(rootPkgJsonPath, 'utf-8'));
+      if (rootPkgJson.exports && typeof rootPkgJson.exports === 'object') {
+        for (const [subpath, target] of Object.entries(rootPkgJson.exports)) {
+          if (subpath === '.' || subpath === './package.json') continue;
+          const allPaths = _collectAllExportPaths(target);
+          for (const exportPath of allPaths) {
+            if (typeof exportPath === 'string' && !exportPath.endsWith('.d.ts') && !exportPath.endsWith('.d.mts') && !exportPath.endsWith('.d.cts')) {
+              const rawPath = exportPath.replace(/^\.\//, '').replace(/\.(c|m)?js$/, '').replace(/\.d\.(c|m)?ts$/, '');
+              _tryMatchExportPath(rawPath, '', rootPkgJson.name || '<root>', subpath.replace(/^\.\//, '') || '.');
+            }
+          }
+        }
+      }
+    } catch { /* ignore — no root package.json or parse error */ }
+
     // end exports marking
   }
 
@@ -4891,7 +5725,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // Pass projectPath to resolve path aliases like @/ -> src/
   // Note: Use the full analysis (jsAnalysis) for reachability - we need full import graph
   // Also pass C# file references (class instantiation, extension methods) for .NET projects
-  const reachableFiles = buildReachableFiles(entryPointFiles, jsAnalysis, projectPath, csharpFileRefs);
+  const { reachable: reachableFiles, exportUsageMap } = buildReachableFiles(entryPointFiles, jsAnalysis, projectPath, csharpFileRefs);
 
   // Use analysisFiles for dead code analysis (excludes generated files)
   const total = analysisFiles.length;
@@ -4975,8 +5809,113 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     results.summary.filesWithDeadCode++;
   }
 
-  // Sort by impact (size)
+  // Per-export dead export detection for reachable JS/TS/Python files
+  const jstspyRegex = /\.([mc]?[jt]s|[jt]sx|py|pyi)$/;
+  // Build a quick lookup from jsAnalysis for exports by file path
+  const analysisByPath = new Map();
+  for (const file of jsAnalysis) {
+    const fp = file.file?.relativePath || file.file;
+    analysisByPath.set(fp, file);
+  }
+
+  for (const file of analysisFiles) {
+    const filePath = file.file?.relativePath || file.file;
+
+    // Only JS/TS/Python (other languages don't have per-specifier imports yet)
+    if (!jstspyRegex.test(filePath)) continue;
+    // Skip unreachable files (already in fullyDeadFiles)
+    if (!reachableFiles.has(filePath)) continue;
+    // Skip entry points — their exports are the public API
+    if (entryPointFiles.has(filePath)) continue;
+
+    const fileExportsList = file.exports || [];
+    // Skip files with no exports
+    if (fileExportsList.length === 0) continue;
+
+    // Get usage data for this file
+    const usage = exportUsageMap.get(filePath);
+
+    // If no usage data at all, the file was reached via a non-tracked path (e.g., Rust mod, glob)
+    // Conservative: skip rather than report all as dead
+    if (!usage) continue;
+
+    // If file has __ALL__ or * usage, all exports are consumed
+    if (usage.has('__ALL__') || usage.has('*')) continue;
+
+    // Check each export
+    const liveExports = [];
+    const deadExports = [];
+    const onlySideEffects = usage.size === 1 && usage.has('__SIDE_EFFECT__');
+
+    // If only side-effect imports, skip — likely CSS/polyfill/setup file
+    if (onlySideEffects) continue;
+
+    for (const exp of fileExportsList) {
+      // Skip re-exports (they're pass-throughs, not owned by this file)
+      if (exp.sourceModule) continue;
+
+      const exportName = exp.name || 'default';
+      const importers = usage.get(exportName);
+
+      if (importers && importers.length > 0) {
+        liveExports.push({
+          name: exportName,
+          type: exp.type || 'unknown',
+          line: exp.line || 0,
+          status: 'live',
+          importedBy: importers.map(u => u.importerFile)
+        });
+      } else {
+        deadExports.push({
+          name: exportName,
+          type: exp.type || 'unknown',
+          line: exp.line || 0,
+          status: 'dead',
+          importedBy: []
+        });
+      }
+    }
+
+    // Only report files with BOTH live and dead exports
+    // If all exports appear dead, it's suspicious (likely FP — framework magic, reflection, etc.)
+    if (deadExports.length === 0 || liveExports.length === 0) continue;
+
+    const totalExports = liveExports.length + deadExports.length;
+    const sizeBytes = file.size || 0;
+
+    results.partiallyDeadFiles.push({
+      file: filePath,
+      relativePath: filePath,
+      sizeBytes,
+      sizeFormatted: formatBytes(sizeBytes),
+      lineCount: file.lineCount || file.lines || 0,
+      status: 'partially-dead',
+      exports: [...liveExports, ...deadExports],
+      deadExports: deadExports.map(e => e.name),
+      summary: {
+        totalExports,
+        deadExports: deadExports.length,
+        liveExports: liveExports.length,
+        percentDead: Math.round((deadExports.length / totalExports) * 100),
+        canDeleteFile: false
+      },
+      recommendation: {
+        action: 'remove-dead-exports',
+        confidence: 'medium',
+        safeToRemove: deadExports.map(e => e.name),
+        keep: liveExports.map(e => e.name),
+        reasoning: `File has ${deadExports.length} unused export(s) out of ${totalExports} total. ` +
+                   `Live exports are imported by other files; dead exports have no detected importers.`
+      }
+    });
+    results.summary.totalDeadExports += deadExports.length;
+    results.summary.totalLiveExports += liveExports.length;
+  }
+
+  // Sort fully dead by impact (size)
   results.fullyDeadFiles.sort((a, b) => (b.sizeBytes || 0) - (a.sizeBytes || 0));
+  // Sort partially dead by number of dead exports (most first)
+  results.partiallyDeadFiles.sort((a, b) => (b.deadExports?.length || 0) - (a.deadExports?.length || 0));
 
   return results;
 }

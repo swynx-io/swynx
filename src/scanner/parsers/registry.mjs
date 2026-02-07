@@ -32,6 +32,7 @@ const parserRegistry = {
   '.ts': () => import('./javascript.mjs'),
   '.tsx': () => import('./javascript.mjs'),
   '.vue': () => import('./javascript.mjs'),
+  '.svelte': () => import('./javascript.mjs'),
 
   // Java/Kotlin (JVM)
   '.java': () => import('./java.mjs'),
@@ -198,6 +199,7 @@ export function getLanguageInfo(extension) {
     '.ts': { name: 'TypeScript', family: 'js' },
     '.tsx': { name: 'TSX', family: 'js' },
     '.vue': { name: 'Vue', family: 'js' },
+    '.svelte': { name: 'Svelte', family: 'js' },
     '.java': { name: 'Java', family: 'jvm' },
     '.kt': { name: 'Kotlin', family: 'jvm' },
     '.kts': { name: 'Kotlin Script', family: 'jvm' },

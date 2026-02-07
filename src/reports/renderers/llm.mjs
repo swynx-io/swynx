@@ -163,6 +163,20 @@ function renderIssueForLLM(lines, issue) {
     lines.push(details.join('\n'));
   }
 
+  // Per-export detail for dead code issues
+  if ((issue.category === 'dead-code' || issue.category === 'dead-exports') && issue.exports?.length > 0) {
+    lines.push('');
+    lines.push('**Exports:**');
+    for (const exp of issue.exports) {
+      if (typeof exp !== 'object') { lines.push(`- \`${exp}\``); continue; }
+      const status = exp.status ? ` [${exp.status.toUpperCase()}]` : '';
+      const line = exp.line ? ` (line ${exp.line})` : '';
+      const type = exp.type ? ` ${exp.type}` : '';
+      const importedBy = exp.importedBy?.length ? ` — imported by: ${exp.importedBy.slice(0, 3).join(', ')}` : '';
+      lines.push(`- \`${exp.name}\`${type}${line}${status}${importedBy}`);
+    }
+  }
+
   lines.push('');
 }
 

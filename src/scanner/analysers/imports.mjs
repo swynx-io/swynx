@@ -23,6 +23,7 @@ export async function analyseImports(jsAnalysis, onProgress = () => {}) {
     // Track imports
     for (const imp of file.imports || []) {
       const module = imp.module;
+      if (typeof module !== "string") continue;
 
       // Track npm packages
       if (!module.startsWith('.') && !module.startsWith('/')) {

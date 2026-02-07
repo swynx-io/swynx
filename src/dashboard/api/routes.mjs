@@ -76,6 +76,7 @@ import {
   getDatePresets,
   logESGExport
 } from '../../reports/esg/index.mjs';
+import { createIntegrationRoutes } from './integration-routes.mjs';
 
 /**
  * Create API routes
@@ -85,6 +86,9 @@ export async function createRoutes() {
 
   // Initialize database on startup
   await initDatabase();
+
+  // Mount integration sub-router
+  router.use('/integrations', createIntegrationRoutes());
 
   // Health check
   router.get('/health', (req, res) => {

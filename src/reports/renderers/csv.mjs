@@ -40,13 +40,18 @@ export function renderActionListCSV(actionList) {
     'status',
     'project',
     'scan_id',
-    'scan_date'
+    'scan_date',
+    'export_name',
+    'export_type',
+    'export_line',
+    'export_status',
+    'imported_by'
   ];
 
   const rows = [headers.join(',')];
 
   for (const issue of issues) {
-    const row = [
+    const baseRow = [
       escapeCSV(issue.severity),
       escapeCSV(issue.category),
       escapeCSV(issue.title),
@@ -65,7 +70,25 @@ export function renderActionListCSV(actionList) {
       escapeCSV(meta.scanId),
       escapeCSV(meta.scanDate)
     ];
-    rows.push(row.join(','));
+
+    // For dead code issues with per-export detail, emit one row per export
+    const hasExports = (issue.category === 'dead-code' || issue.category === 'dead-exports') &&
+      issue.exports?.length > 0 && typeof issue.exports[0] === 'object';
+
+    if (hasExports) {
+      for (const exp of issue.exports) {
+        rows.push([
+          ...baseRow,
+          escapeCSV(exp.name || ''),
+          escapeCSV(exp.type || ''),
+          escapeCSV(exp.line || ''),
+          escapeCSV(exp.status || (issue.category === 'dead-code' ? 'dead' : '')),
+          escapeCSV((exp.importedBy || []).slice(0, 5).join('; '))
+        ].join(','));
+      }
+    } else {
+      rows.push([...baseRow, '', '', '', '', ''].join(','));
+    }
   }
 
   return rows.join('\n');

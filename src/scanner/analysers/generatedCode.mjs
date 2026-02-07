@@ -47,6 +47,9 @@ export const DEFAULT_GENERATED_PATTERNS = [
   /\.g\.cs$/,
   /\.g\.i\.cs$/,
   /\/Migrations\/.*\.cs$/,
+  /^Migrations\/.*\.cs$/,           // Migrations at repo root (relative paths)
+  /\.AssemblyAttributes\.cs$/,      // Auto-generated assembly attributes
+  /GlobalSuppressions\.cs$/,        // Auto-generated code analysis suppressions
 
   // Go generated
   /_gen\.go$/,

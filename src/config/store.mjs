@@ -28,6 +28,7 @@ const SETTINGS_FILE = join(CONFIG_DIR, 'settings.json');
 const LAST_UPDATE_CHECK_FILE = join(CONFIG_DIR, '.last-update-check');
 const NETWORK_AUDIT_LOG = join(CONFIG_DIR, 'network-audit.log');
 const SCANS_DB = join(CONFIG_DIR, 'scans.db');
+const CONNECTIONS_FILE = join(CONFIG_DIR, 'connections.json');
 
 /**
  * Ensure config directory exists
@@ -331,6 +332,26 @@ function shouldCheckForUpdates(hoursThreshold = 24) {
 }
 
 // ============================================
+// CONNECTIONS (Git platform integrations)
+// ============================================
+
+/**
+ * Load connections from file
+ * @returns {Array} Array of connection objects
+ */
+function loadConnections() {
+  return readConfig(CONNECTIONS_FILE, []);
+}
+
+/**
+ * Save connections to file
+ * @param {Array} connections - Array of connection objects
+ */
+function saveConnections(connections) {
+  writeConfig(CONNECTIONS_FILE, connections);
+}
+
+// ============================================
 // UTILITY
 // ============================================
 
@@ -402,6 +423,11 @@ export {
   getLastUpdateCheck,
   recordUpdateCheck,
   shouldCheckForUpdates,
+
+  // Connections
+  CONNECTIONS_FILE,
+  loadConnections,
+  saveConnections,
 
   // Utility
   getConfigInfo

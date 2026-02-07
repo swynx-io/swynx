@@ -71,7 +71,7 @@ export function renderActionListMarkdown(actionList) {
         }
 
         if (issue.file && issue.file !== 'package.json') {
-          lines.push(`  - File: \`${issue.file}\``);
+          lines.push(`  - File: \`${issue.file}\`${issue.size ? ` (${formatBytes(issue.size)})` : ''}`);
         }
 
         if (issue.locations?.length) {
@@ -81,7 +81,39 @@ export function renderActionListMarkdown(actionList) {
         }
 
         if (issue.impact?.cost) {
-          lines.push(`  - Annual waste: £${issue.impact.cost.toFixed(2)}${issue.impact.co2 ? ` + ${issue.impact.co2.toFixed(1)} kg CO₂` : ''}`);
+          lines.push(`  - Annual cost: £${issue.impact.cost.toFixed(2)}${issue.impact.co2 ? ` | Monthly CO₂: ${issue.impact.co2.toFixed(3)} kg` : ''}`);
+        }
+
+        // Per-export table for fully dead files
+        if (issue.category === 'dead-code' && issue.exports?.length > 0) {
+          lines.push('');
+          lines.push('  | Export | Type | Line |');
+          lines.push('  |--------|------|------|');
+          for (const exp of issue.exports) {
+            if (typeof exp !== 'object') { lines.push(`  | \`${exp}\` | - | - |`); continue; }
+            lines.push(`  | \`${exp.name}\` | ${exp.type || '-'} | ${exp.line || '-'} |`);
+          }
+          if (issue.entryPointCount) {
+            lines.push('');
+            lines.push(`  > File is not reachable from any detected entry point (${issue.entryPointCount} entry points found).`);
+          }
+        }
+
+        // Per-export table for partially dead files (with status + importedBy)
+        if (issue.category === 'dead-exports' && issue.exports?.length > 0) {
+          lines.push('');
+          lines.push('  | Export | Type | Line | Status | Imported By |');
+          lines.push('  |--------|------|------|--------|-------------|');
+          for (const exp of issue.exports) {
+            if (typeof exp !== 'object') continue;
+            const status = exp.status === 'dead' ? '**DEAD**' : 'live';
+            const importedBy = (exp.importedBy || []).slice(0, 3).join(', ') || '-';
+            lines.push(`  | \`${exp.name}\` | ${exp.type || '-'} | ${exp.line || '-'} | ${status} | ${importedBy} |`);
+          }
+          if (issue.entryPointCount) {
+            lines.push('');
+            lines.push(`  > ${issue.recommendation?.reasoning || `File has ${issue.deadExportNames?.length || '?'} unused exports.`}`);
+          }
         }
 
         if (issue.fix?.command) {

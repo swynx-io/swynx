@@ -34,7 +34,7 @@ export async function parseJavaScript(file) {
   let isVueSFC = false;
   let scriptLineOffset = 0;
 
-  if (filePath.endsWith('.vue')) {
+  if (filePath.endsWith('.vue') || filePath.endsWith('.svelte')) {
     isVueSFC = true;
     const scriptMatch = content.match(/<script(?:\s+[^>]*)?>([\s\S]*?)<\/script>/i);
     if (scriptMatch) {
@@ -53,7 +53,7 @@ export async function parseJavaScript(file) {
         imports: [],
         lines: content.split('\n').length,
         size: content.length,
-        parseMethod: 'vue-no-script'
+        parseMethod: filePath.endsWith('.svelte') ? 'svelte-no-script' : 'vue-no-script'
       };
     }
   }
