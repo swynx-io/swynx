@@ -31,7 +31,7 @@ print_banner() {
   echo "                                          ....."
   echo "                                         ....."
   echo -e "${NC}"
-  echo "  Dead code detection that learns"
+  echo "  Continuous codebase intelligence across 34 languages"
   echo ""
 }
 
