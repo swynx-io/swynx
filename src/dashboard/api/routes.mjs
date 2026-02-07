@@ -63,9 +63,9 @@ import { loadLicense, saveLicense } from '../../license/storage.mjs';
 import { VERSION, checkForUpdate, getVersionInfo, installUpdate } from '../../cli/commands/update.mjs';
 import { getSettings, saveSettings, getSetting } from '../../config/store.mjs';
 import { availableParallelism, totalmem, freemem, platform } from 'os';
-import { execFile } from 'child_process';
+import { execFile, execSync } from 'child_process';
 import { readdirSync, statSync, existsSync } from 'fs';
-import { join, basename } from 'path';
+import { join, basename, dirname } from 'path';
 import {
   generateReport,
   generateDiffReport,
@@ -3406,7 +3406,6 @@ export async function createRoutes() {
     ];
     for (const editor of editors) {
       try {
-        const { execSync } = require('child_process');
         execSync(`which ${editor.cmd}`, { stdio: 'ignore' });
         return editor;
       } catch { /* not found */ }
@@ -3458,7 +3457,6 @@ export async function createRoutes() {
         return res.status(400).json({ success: false, error: 'projectPath is required' });
       }
 
-      const { dirname } = require('path');
       const targetDir = file ? dirname(join(projectPath, file)) : projectPath;
       if (!existsSync(targetDir)) {
         return res.status(404).json({ success: false, error: 'Directory not found' });
