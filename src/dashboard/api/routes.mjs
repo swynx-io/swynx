@@ -62,7 +62,8 @@ import { activateLicense } from '../../license/activation.mjs';
 import { loadLicense, saveLicense } from '../../license/storage.mjs';
 import { VERSION, checkForUpdate, getVersionInfo, installUpdate } from '../../cli/commands/update.mjs';
 import { getSettings, saveSettings, getSetting } from '../../config/store.mjs';
-import { availableParallelism, totalmem, freemem } from 'os';
+import { availableParallelism, totalmem, freemem, platform } from 'os';
+import { execFile } from 'child_process';
 import { readdirSync, statSync, existsSync } from 'fs';
 import { join, basename } from 'path';
 import {
@@ -3386,6 +3387,93 @@ export async function createRoutes() {
 
     clearInterval(keepAlive);
     res.end();
+  });
+
+  // ============================================
+  // OPEN FILE IN EDITOR
+  // ============================================
+
+  // Detect available editor
+  function detectEditor() {
+    const editors = [
+      { cmd: 'cursor', args: (f, l) => l ? ['--goto', `${f}:${l}`] : [f] },
+      { cmd: 'code', args: (f, l) => l ? ['--goto', `${f}:${l}`] : [f] },
+      { cmd: 'subl', args: (f, l) => l ? [`${f}:${l}`] : [f] },
+      { cmd: 'atom', args: (f, l) => l ? [`${f}:${l}`] : [f] },
+      { cmd: 'idea', args: (f, l) => l ? ['--line', String(l), f] : [f] },
+      { cmd: 'vim', args: (f, l) => l ? [`+${l}`, f] : [f] },
+      { cmd: 'nano', args: (f, l) => l ? [`+${l}`, f] : [f] },
+    ];
+    for (const editor of editors) {
+      try {
+        const { execSync } = require('child_process');
+        execSync(`which ${editor.cmd}`, { stdio: 'ignore' });
+        return editor;
+      } catch { /* not found */ }
+    }
+    return null;
+  }
+
+  let cachedEditor = undefined;
+
+  router.post('/open', async (req, res) => {
+    try {
+      const { projectPath, file, line } = req.body;
+      if (!projectPath || !file) {
+        return res.status(400).json({ success: false, error: 'projectPath and file are required' });
+      }
+
+      const fullPath = join(projectPath, file);
+      if (!existsSync(fullPath)) {
+        return res.status(404).json({ success: false, error: 'File not found' });
+      }
+
+      // Cache editor detection
+      if (cachedEditor === undefined) {
+        cachedEditor = detectEditor();
+      }
+
+      if (!cachedEditor) {
+        return res.status(404).json({ success: false, error: 'No supported editor found (code, cursor, subl, atom, idea, vim, nano)' });
+      }
+
+      const args = cachedEditor.args(fullPath, line || null);
+      execFile(cachedEditor.cmd, args, (err) => {
+        if (err) {
+          console.error('[Open File] Error:', err.message);
+        }
+      });
+
+      res.json({ success: true, editor: cachedEditor.cmd, file: fullPath, line: line || null });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Open folder in system file manager
+  router.post('/open-folder', async (req, res) => {
+    try {
+      const { projectPath, file } = req.body;
+      if (!projectPath) {
+        return res.status(400).json({ success: false, error: 'projectPath is required' });
+      }
+
+      const { dirname } = require('path');
+      const targetDir = file ? dirname(join(projectPath, file)) : projectPath;
+      if (!existsSync(targetDir)) {
+        return res.status(404).json({ success: false, error: 'Directory not found' });
+      }
+
+      const os = platform();
+      const cmd = os === 'darwin' ? 'open' : os === 'win32' ? 'explorer' : 'xdg-open';
+      execFile(cmd, [targetDir], (err) => {
+        if (err) console.error('[Open Folder] Error:', err.message);
+      });
+
+      res.json({ success: true, directory: targetDir });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   });
 
   return router;
