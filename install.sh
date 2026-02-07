@@ -67,19 +67,31 @@ check_node() {
 }
 
 install_swynx() {
+  echo ""
   echo -e "${BLUE}Installing Swynx...${NC}"
+  echo ""
 
   # Remove old installation
-  rm -rf "$INSTALL_DIR"
+  if [ -d "$INSTALL_DIR" ]; then
+    echo -e "  Removing previous installation..."
+    rm -rf "$INSTALL_DIR"
+  fi
 
   # Clone repository
-  git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>/dev/null
+  echo -e "  Cloning from GitHub..."
+  git clone --depth 1 "https://github.com/${REPO}.git" "$INSTALL_DIR" 2>&1 | while read -r line; do
+    echo -e "    ${line}"
+  done
 
   # Install dependencies
+  echo -e "  Installing dependencies..."
   cd "$INSTALL_DIR"
-  npm install --production --silent
+  npm install --production 2>&1 | tail -3 | while read -r line; do
+    echo -e "    ${line}"
+  done
 
-  echo -e "${GREEN}✓ Swynx installed${NC}"
+  echo ""
+  echo -e "${GREEN}✓ Swynx installed to ${INSTALL_DIR}${NC}"
 }
 
 setup_path() {
