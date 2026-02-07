@@ -5790,15 +5790,24 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       : entryPointCount < 3 || hasDynamicRisk ? 'low'
       : 'medium';
 
+    // Extract source lines for each export
+    const contentLines = content.split('\n');
+    const exportsWithSource = exports.map(e => ({
+      name: e.name,
+      type: e.type,
+      line: e.line,
+      sourceLine: e.line && contentLines[e.line - 1] ? contentLines[e.line - 1].trimEnd() : undefined
+    }));
+
     results.fullyDeadFiles.push({
       file: filePath,
       relativePath: filePath,
       sizeBytes,
       sizeFormatted: formatBytes(sizeBytes),
-      lineCount: content.split('\n').length,
+      lineCount: contentLines.length,
       status: 'fully-dead',
       reason: 'not-reachable-from-entry-points',
-      exports: exports.map(e => ({ name: e.name, type: e.type, line: e.line })),
+      exports: exportsWithSource,
       gitHistory,
       costImpact: cost,
       summary: {
@@ -5894,6 +5903,21 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     // Only report files with BOTH live and dead exports
     // If all exports appear dead, it's suspicious (likely FP — framework magic, reflection, etc.)
     if (deadExports.length === 0 || liveExports.length === 0) continue;
+
+    // Read source lines for exports (content was freed at A10, re-read from disk)
+    let fileLines = null;
+    if (projectPath) {
+      try {
+        fileLines = readFileSync(join(projectPath, filePath), 'utf-8').split('\n');
+      } catch { /* skip — file may have moved */ }
+    }
+    if (fileLines) {
+      for (const exp of [...liveExports, ...deadExports]) {
+        if (exp.line && fileLines[exp.line - 1]) {
+          exp.sourceLine = fileLines[exp.line - 1].trimEnd();
+        }
+      }
+    }
 
     const totalExports = liveExports.length + deadExports.length;
     const sizeBytes = file.size || 0;
