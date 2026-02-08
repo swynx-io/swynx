@@ -3737,14 +3737,20 @@ export async function createRoutes() {
       const outputPath = normalised.replace(/\.[^.]+$/, `.${targetFormat}`);
 
       // Convert
-      let pipeline = sharpLib(normalised);
-      if (targetFormat === 'webp') {
-        pipeline = pipeline.webp({ quality: q });
-      } else if (targetFormat === 'avif') {
-        pipeline = pipeline.avif({ quality: q });
+      try {
+        let pipeline = sharpLib(normalised);
+        if (targetFormat === 'webp') {
+          pipeline = pipeline.webp({ quality: q });
+        } else if (targetFormat === 'avif') {
+          pipeline = pipeline.avif({ quality: q });
+        }
+        await pipeline.toFile(outputPath);
+      } catch (convErr) {
+        return res.status(400).json({
+          success: false,
+          error: `Could not convert image: ${convErr.message?.includes('corrupt') || convErr.message?.includes('Unsupported') ? 'File appears to be corrupt or in an unsupported format' : convErr.message}`
+        });
       }
-
-      await pipeline.toFile(outputPath);
 
       // Get new file size
       const newStat = statSync(outputPath);
