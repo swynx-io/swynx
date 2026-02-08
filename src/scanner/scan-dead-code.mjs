@@ -134,6 +134,19 @@ const DEFAULT_EXCLUDE = [
   '**/__mockdata__/**', '**/__mock__/**', '**/__for-testing__/**',
   '**/pkg-tests-fixtures/**', '**/pkg-tests-specs/**',
   '**/type-tests/**', '**/type-test/**',
+  // Test fixture / baseline directories (huge in compiler repos)
+  '**/TestData/**', '**/testData/**',
+  '**/test-cases/**', '**/test_cases/**',
+  '**/conformance/**',
+  '**/testcases/**',
+  // Compiler test input directories
+  '**/cases/**/*.ts',
+  '**/test/cases/**',
+  // IDE/editor test fixtures
+  '**/test-fixture/**',
+  // C# intermediate / compiled output
+  '**/obj/**',
+  '**/bin/Debug/**', '**/bin/Release/**',
 ];
 
 /**

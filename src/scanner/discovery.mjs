@@ -74,7 +74,31 @@ const DEFAULT_EXCLUDE = [
   '**/*.zip',
   '**/*.tar',
   '**/*.gz',
-  '**/*.rar'
+  '**/*.rar',
+  // Test fixture / baseline directories
+  '**/testdata/**',
+  '**/test-data/**',
+  '**/test_data/**',
+  '**/fixtures/**',
+  '**/fixture/**',
+  '**/TestData/**',
+  '**/test-cases/**',
+  '**/test_cases/**',
+  '**/testcases/**',
+  '**/conformance/**',
+  '**/test-fixture/**',
+  '**/tests/baselines/**',
+  '**/test/baselines/**',
+  // Compiler test input directories
+  '**/cases/**/*.ts',
+  '**/test/cases/**',
+  // C# intermediate / compiled output
+  '**/obj/**',
+  '**/bin/Debug/**',
+  '**/bin/Release/**',
+  // Snapshots
+  '**/__snapshots__/**',
+  '**/snapshots/**',
 ];
 
 /**

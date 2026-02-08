@@ -87,6 +87,21 @@ export async function initDatabase(customPath = null) {
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_project_config_path ON project_config(project_path)`);
 
+  // Resolutions table — tracks dead exports resolved via the inline editor
+  db.run(`
+    CREATE TABLE IF NOT EXISTS resolutions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_path TEXT NOT NULL,
+      scan_id TEXT NOT NULL,
+      file TEXT NOT NULL,
+      export_name TEXT NOT NULL,
+      resolved_at TEXT NOT NULL,
+      UNIQUE(scan_id, file, export_name)
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_resolutions_scan_id ON resolutions(scan_id)`);
+
   // Save after schema creation
   saveDatabase();
 
@@ -353,6 +368,37 @@ function deepMergeConfig(target, source) {
 }
 
 /**
+ * Save resolutions (dead exports resolved via editor)
+ * @param {string} projectPath
+ * @param {string} scanId
+ * @param {Array<{file: string, exportName: string}>} resolutions
+ */
+export async function saveResolutions(projectPath, scanId, resolutions) {
+  await getDb();
+
+  const now = new Date().toISOString();
+  for (const r of resolutions) {
+    db.run(`
+      INSERT OR IGNORE INTO resolutions (project_path, scan_id, file, export_name, resolved_at)
+      VALUES (?, ?, ?, ?, ?)
+    `, [projectPath, scanId, r.file, r.exportName, now]);
+  }
+
+  saveDatabase();
+  return { success: true, count: resolutions.length };
+}
+
+/**
+ * Get resolutions for a scan
+ * @param {string} scanId
+ * @returns {Promise<Array<{file: string, export_name: string, resolved_at: string}>>}
+ */
+export async function getResolutions(scanId) {
+  await getDb();
+  return queryAll('SELECT file, export_name, resolved_at FROM resolutions WHERE scan_id = ?', [scanId]);
+}
+
+/**
  * Close database connection
  */
 export function closeDatabase() {
@@ -373,5 +419,7 @@ export default {
   getProjectStats,
   getProjectConfigFromDb,
   saveProjectConfigToDb,
+  saveResolutions,
+  getResolutions,
   closeDatabase
 };
