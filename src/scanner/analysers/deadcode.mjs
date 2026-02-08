@@ -2918,8 +2918,13 @@ function isEntryPoint(filePath, packageJson = {}, projectPath = null, htmlEntryP
     return { isEntry: true, reason: `Main entry for package ${nestedPkgCheck.packageName || nestedPkgCheck.packageDir}` };
   }
   // If file is in an abandoned workspace package, don't let it match generic patterns
+  // EXCEPTION: playground/example/demo directories are inherently test/dev directories
+  // and should still be treated as entry points even if they're in abandoned packages
   if (nestedPkgCheck.isAbandoned) {
-    return { isEntry: false, reason: 'In abandoned workspace package' };
+    const isDevDirectory = /(?:^|\/)(playgrounds?|examples?|demos?|samples?|fixtures?|__tests__|tests?)(?:\/|$)/i.test(filePath);
+    if (!isDevDirectory) {
+      return { isEntry: false, reason: 'In abandoned workspace package' };
+    }
   }
 
   // Check against patterns
@@ -3004,6 +3009,15 @@ function isEntryPoint(filePath, packageJson = {}, projectPath = null, htmlEntryP
       if (filePath.startsWith('src/') || filePath.includes('/src/')) {
         return { isEntry: true, reason: `Package source (build dir ${buildDir}/ detected)` };
       }
+    }
+  }
+
+  // When package has no entry point fields (main, module, exports, source),
+  // files directly in src/ are likely entry points (e.g., Swiper's src/swiper.mjs).
+  // These packages expose their source directly without a build step.
+  if (!packageJson.main && !packageJson.module && !packageJson.exports && !packageJson.source) {
+    if (/^src\/[^/]+\.[mc]?[jt]sx?$/.test(filePath)) {
+      return { isEntry: true, reason: 'Source root file (no package entry points configured)' };
     }
   }
 
@@ -4609,10 +4623,17 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
             recordExportUsage(resolved, current, imp.specifiers, 'esm');
           } else if (isPythonFile && imp.type === 'from' && imp.name) {
             // Python: from X import name — synthesize specifier
-            const pySpec = imp.name === '*'
-              ? [{ name: '*', type: 'namespace' }]
-              : [{ name: imp.name, type: 'named' }];
-            recordExportUsage(resolved, current, pySpec, 'from');
+            // For __init__.py files: mark ALL exports as used (conservative).
+            // __init__.py defines the package's public API — its sibling modules'
+            // exports are importable via the package (e.g., from openai.types.X import Y).
+            // Marking only the named import would falsely flag other exports as dead.
+            const isInitFile = current.endsWith('__init__.py') || current.endsWith('__init__.pyi');
+            if (isInitFile || imp.name === '*') {
+              recordExportUsage(resolved, current, null, 'from');
+            } else {
+              const pySpec = [{ name: imp.name, type: 'named' }];
+              recordExportUsage(resolved, current, pySpec, 'from');
+            }
           } else if (imp.type === 'commonjs' || imp.type === 'dynamic-import' || imp.type === 'require-context') {
             recordExportUsage(resolved, current, null, imp.type || 'commonjs');
           } else if (!imp.specifiers || imp.specifiers.length === 0) {
@@ -5447,6 +5468,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     if (deadPatterns.test(filePath) || deadFileExact.test(filePath)) {
       // Don't mark as entry point, let it be analyzed for dead code
       continue;
+    }
+    if (false) { /* placeholder */
     }
 
     // C#/.NET: Mark all .cs files in transitively-referenced project directories as entry points

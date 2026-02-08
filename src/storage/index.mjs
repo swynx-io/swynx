@@ -9,7 +9,9 @@ import {
   getProjects,
   getProjectStats,
   getProjectConfigFromDb,
-  saveProjectConfigToDb
+  saveProjectConfigToDb,
+  saveResolutions,
+  getResolutions
 } from './sqlite.mjs';
 
 export {
@@ -21,7 +23,9 @@ export {
   getProjects,
   getProjectStats,
   getProjectConfigFromDb,
-  saveProjectConfigToDb
+  saveProjectConfigToDb,
+  saveResolutions,
+  getResolutions
 };
 
 export default {
@@ -33,5 +37,7 @@ export default {
   getProjects,
   getProjectStats,
   getProjectConfigFromDb,
-  saveProjectConfigToDb
+  saveProjectConfigToDb,
+  saveResolutions,
+  getResolutions
 };

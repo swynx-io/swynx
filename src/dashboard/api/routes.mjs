@@ -13,7 +13,9 @@ import {
   getProjects,
   getProjectStats,
   getProjectConfigFromDb,
-  saveProjectConfigToDb
+  saveProjectConfigToDb,
+  saveResolutions,
+  getResolutions
 } from '../../storage/index.mjs';
 import {
   listModules,
@@ -1612,6 +1614,20 @@ export async function createRoutes() {
         });
       }
 
+      // Load resolutions for this scan
+      const resolutions = await getResolutions(req.params.scanId);
+      const resolvedSet = new Set(resolutions.map(r => `${r.file}::${r.export_name}`));
+
+      // Helper to add resolved flag to exports
+      const addResolved = (exports, filePath) =>
+        (exports || []).map(e => ({
+          ...e,
+          resolved: resolvedSet.has(`${filePath}::${e.name}`)
+        }));
+
+      const resolvedCount = resolvedSet.size;
+      const totalExportCount = totalDeadExports;
+
       res.json({
         success: true,
         overview: {
@@ -1636,31 +1652,41 @@ export async function createRoutes() {
             }
           ]
         },
-        fullyDeadFiles: fullyDeadFiles.map(f => ({
-          file: f.file || f.relativePath || f.path,
-          relativePath: f.relativePath || f.file || f.path,
-          sizeBytes: f.sizeBytes || f.size || 0,
-          sizeFormatted: f.sizeFormatted || formatBytes(f.sizeBytes || f.size || 0),
-          lineCount: f.lineCount || f.lines,
-          language: f.language,
-          status: f.status || 'fully-dead',
-          exports: f.exports || [],
-          summary: f.summary,
-          recommendation: f.recommendation,
-          gitHistory: f.gitHistory,
-          costImpact: f.costImpact
-        })),
-        partiallyDeadFiles: partiallyDeadFiles.map(f => ({
-          file: f.file || f.relativePath,
-          relativePath: f.relativePath || f.file,
-          sizeBytes: f.sizeBytes || 0,
-          sizeFormatted: f.sizeFormatted || formatBytes(f.sizeBytes || 0),
-          lineCount: f.lineCount,
-          status: f.status || 'partially-dead',
-          exports: f.exports || [],
-          summary: f.summary,
-          recommendation: f.recommendation
-        })),
+        resolutionSummary: {
+          resolved: resolvedCount,
+          total: totalExportCount
+        },
+        fullyDeadFiles: fullyDeadFiles.map(f => {
+          const filePath = f.relativePath || f.file || f.path;
+          return {
+            file: f.file || f.relativePath || f.path,
+            relativePath: filePath,
+            sizeBytes: f.sizeBytes || f.size || 0,
+            sizeFormatted: f.sizeFormatted || formatBytes(f.sizeBytes || f.size || 0),
+            lineCount: f.lineCount || f.lines,
+            language: f.language,
+            status: f.status || 'fully-dead',
+            exports: addResolved(f.exports, filePath),
+            summary: f.summary,
+            recommendation: f.recommendation,
+            gitHistory: f.gitHistory,
+            costImpact: f.costImpact
+          };
+        }),
+        partiallyDeadFiles: partiallyDeadFiles.map(f => {
+          const filePath = f.relativePath || f.file;
+          return {
+            file: f.file || f.relativePath,
+            relativePath: filePath,
+            sizeBytes: f.sizeBytes || 0,
+            sizeFormatted: f.sizeFormatted || formatBytes(f.sizeBytes || 0),
+            lineCount: f.lineCount,
+            status: f.status || 'partially-dead',
+            exports: addResolved(f.exports, filePath),
+            summary: f.summary,
+            recommendation: f.recommendation
+          };
+        }),
         entryPoints: entryPoints.slice(0, 30),
         quickWins
       });
@@ -3478,6 +3504,87 @@ export async function createRoutes() {
       res.json({ success: true, size: stat.size, savedAt: new Date().toISOString() });
     } catch (error) {
       res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ============================================
+  // RESOLUTIONS (dead export tracking from editor)
+  // ============================================
+
+  router.post('/resolutions', async (req, res) => {
+    try {
+      const { projectPath, scanId, resolutions } = req.body;
+      if (!projectPath || !scanId || !Array.isArray(resolutions)) {
+        return res.status(400).json({ success: false, error: 'projectPath, scanId, and resolutions[] required' });
+      }
+      const result = await saveResolutions(projectPath, scanId, resolutions);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  router.get('/resolutions/:scanId', async (req, res) => {
+    try {
+      const resolutions = await getResolutions(req.params.scanId);
+      res.json({ success: true, resolutions });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ============================================
+  // UNINSTALL DEPENDENCY
+  // ============================================
+
+  router.post('/fix/uninstall-dep', async (req, res) => {
+    try {
+      const { projectPath, packageName } = req.body;
+      if (!projectPath || !packageName) {
+        return res.status(400).json({ success: false, error: 'projectPath and packageName required' });
+      }
+
+      // Validate package name (prevent command injection)
+      if (!/^[@a-z0-9][@a-z0-9._\-/]*$/i.test(packageName)) {
+        return res.status(400).json({ success: false, error: 'Invalid package name' });
+      }
+
+      // Detect package manager from lockfiles
+      let cmd = 'npm';
+      let args = ['uninstall', packageName];
+
+      if (existsSync(join(projectPath, 'pnpm-lock.yaml'))) {
+        cmd = 'pnpm';
+        args = ['remove', packageName];
+      } else if (existsSync(join(projectPath, 'yarn.lock'))) {
+        cmd = 'yarn';
+        args = ['remove', packageName];
+      } else if (existsSync(join(projectPath, 'bun.lockb')) || existsSync(join(projectPath, 'bun.lock'))) {
+        cmd = 'bun';
+        args = ['remove', packageName];
+      }
+
+      // Run uninstall
+      const { execSync: exec } = await import('child_process');
+      const output = exec(`${cmd} ${args.join(' ')}`, {
+        cwd: projectPath,
+        timeout: 60000,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      res.json({
+        success: true,
+        packageManager: cmd,
+        command: `${cmd} ${args.join(' ')}`,
+        output: (output || '').trim().slice(0, 500)
+      });
+    } catch (error) {
+      const stderr = error.stderr ? error.stderr.toString().trim() : '';
+      res.status(500).json({
+        success: false,
+        error: stderr || error.message
+      });
     }
   });
 
