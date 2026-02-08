@@ -3724,7 +3724,7 @@ export async function createRoutes() {
       } catch (e) {
         return res.status(500).json({
           success: false,
-          error: 'sharp is not installed. Run: npm install sharp'
+          error: `sharp failed to load: ${e.message}`
         });
       }
 

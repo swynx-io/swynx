@@ -904,19 +904,13 @@ function analyseFont(asset, projectPath) {
     estimatedSavingsPercent = 0.70;
     additionalSuggestions.push('EOT format is obsolete - consider removing entirely');
   } else if (ext === '.woff2') {
-    // Already optimal format, but could still be large
-    if (size > SIZE_THRESHOLDS.font.veryLarge) {
-      reason = 'Already WOFF2 format, but file is large. Consider subsetting to used characters only.';
-      additionalSuggestions.push('Use tools like glyphhanger, fonttools, or subfont to subset');
-      estimatedSavingsPercent = 0.50;
-    } else {
-      result.optimisation = {
-        canOptimise: false,
-        currentFormat: 'WOFF2',
-        reason: 'Already using WOFF2 - the most efficient web font format.'
-      };
-      return result;
-    }
+    // WOFF2 is already the optimal web font format - nothing to convert to
+    result.optimisation = {
+      canOptimise: false,
+      currentFormat: 'WOFF2',
+      reason: 'Already using WOFF2 - the most efficient web font format.'
+    };
+    return result;
   }
 
   // Subsetting recommendation for large fonts
