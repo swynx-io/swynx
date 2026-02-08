@@ -38,6 +38,8 @@ function isExampleContent(line, prevLine) {
   // Text content on the line immediately after an opening JSX/HTML tag
   // e.g. <div className="...">  followed by  eval(userInput) at handler.ts:42
   if (prevLine && /^\s*<[A-Za-z][A-Za-z0-9.]*\b.*[^/]>\s*$/.test(prevLine)) return true;
+  // JSON-LD structured data — standard React SEO pattern, not an XSS risk
+  if (prevLine && /application\/ld\+json/.test(prevLine)) return true;
   return false;
 }
 
