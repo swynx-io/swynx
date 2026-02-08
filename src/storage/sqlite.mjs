@@ -181,7 +181,7 @@ export async function saveScan(scanResult) {
     scanResult.security?.summary?.medium || 0,
     scanResult.security?.summary?.low || 0,
     scanResult.outdated?.summary?.total || scanResult.outdated?.packages?.length || scanResult.outdated?.length || 0,
-    scanResult.emissions?.monthly?.kgCO2 || 0,
+    scanResult.emissions?.current?.monthlyCO2Kg || scanResult.emissions?.monthly?.kgCO2 || 0,
     JSON.stringify(scanResult)
   ]);
 

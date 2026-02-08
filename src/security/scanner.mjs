@@ -27,6 +27,21 @@ function isCommentLine(line) {
 }
 
 /**
+ * Check if a line contains example/documentation content rather than real code.
+ * Prevents false positives in marketing pages, docs, and code examples rendered as UI text.
+ */
+function isExampleContent(line, prevLine) {
+  // Well-known example AWS credentials (explicitly not real secrets)
+  if (/AKIAIOSFODNN7EXAMPLE/.test(line)) return true;
+  // Lines with JSX className= are UI markup, not executable code
+  if (/className\s*=/.test(line)) return true;
+  // Text content on the line immediately after an opening JSX/HTML tag
+  // e.g. <div className="...">  followed by  eval(userInput) at handler.ts:42
+  if (prevLine && /^\s*<[A-Za-z][A-Za-z0-9.]*\b.*[^/]>\s*$/.test(prevLine)) return true;
+  return false;
+}
+
+/**
  * Boost severity when file is in a security-critical directory
  */
 function boostSeverity(severity, proximityBoost) {
@@ -54,9 +69,22 @@ function scanFileContent(filePath, content, proximity) {
   const lines = content.split('\n');
   const fileFindings = [];
 
+  let inTemplateLiteral = false;
+
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx];
     if (isCommentLine(line)) continue;
+
+    // Track multi-line template literal state — content inside
+    // multi-line backtick strings is string data, not executable code
+    const backticks = (line.match(/(?<!\\)`/g) || []).length;
+    if (backticks % 2 === 1) inTemplateLiteral = !inTemplateLiteral;
+
+    // Skip lines inside multi-line template literals (code examples, UI text)
+    if (inTemplateLiteral && backticks === 0) continue;
+
+    // Skip known example/documentation content
+    if (isExampleContent(line, lineIdx > 0 ? lines[lineIdx - 1] : '')) continue;
 
     for (const pattern of patterns) {
       if (pattern.pattern.test(line)) {
