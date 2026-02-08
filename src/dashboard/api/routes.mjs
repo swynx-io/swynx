@@ -64,10 +64,11 @@ import { activateLicense } from '../../license/activation.mjs';
 import { loadLicense, saveLicense } from '../../license/storage.mjs';
 import { VERSION, checkForUpdate, getVersionInfo, installUpdate } from '../../cli/commands/update.mjs';
 import { getSettings, saveSettings, getSetting } from '../../config/store.mjs';
+import { calculateEmissions } from '../../emissions/index.mjs';
 import { availableParallelism, totalmem, freemem, platform } from 'os';
 import { execFile, execSync } from 'child_process';
-import { readdirSync, statSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import { join, basename, dirname, resolve, normalize, isAbsolute } from 'path';
+import { readdirSync, statSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { join, basename, dirname, resolve, normalize, isAbsolute, extname, relative } from 'path';
 import {
   generateReport,
   generateDiffReport,
@@ -1477,6 +1478,46 @@ export async function createRoutes() {
             bandwidth: ((summary.wasteSizeBytes || 0) / 1024 / 1024 / 1024) * 10000 * 0.085,
             total: ((summary.wasteSizeBytes || 0) / 1024 / 1024 / 1024) * 10000 * 0.085
           }
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Recalculate emissions with custom visitor count
+  router.post('/drill/emissions/recalculate', async (req, res) => {
+    try {
+      const { scanId, monthlyVisitors } = req.body;
+      if (!scanId) {
+        return res.status(400).json({ success: false, error: 'scanId is required' });
+      }
+
+      const scan = await getScanById(scanId);
+      if (!scan) {
+        return res.status(404).json({ success: false, error: 'Scan not found' });
+      }
+
+      const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
+      const originalEmissions = scanData.emissions || {};
+      const originalConfig = originalEmissions.config || {};
+
+      const emissions = calculateEmissions({
+        buildSizeBytes: originalConfig.buildSizeBytes || 0,
+        wasteBytes: originalConfig.wasteBytes || 0,
+        monthlyVisitors: monthlyVisitors || originalConfig.monthlyVisitors || 10000,
+        avgPagesPerVisit: originalConfig.avgPagesPerVisit || 3,
+        cacheRate: originalConfig.cacheRate || 0.7,
+        region: originalEmissions.region || 'Global',
+        greenHosted: originalEmissions.greenHosted || false
+      });
+
+      res.json({
+        success: true,
+        emissions,
+        co2: {
+          monthlyKg: emissions.current.monthlyCO2Kg,
+          annualKg: emissions.current.annualCO2Kg
         }
       });
     } catch (error) {
@@ -3638,6 +3679,147 @@ export async function createRoutes() {
         success: false,
         error: stderr || error.message
       });
+    }
+  });
+
+  // ============================================
+  // OPTIMISE IMAGE (convert to WebP/AVIF)
+  // ============================================
+
+  router.post('/fix/optimise-image', async (req, res) => {
+    try {
+      const { projectPath, filePath, format = 'webp', quality = 80 } = req.body;
+
+      if (!projectPath || !filePath) {
+        return res.status(400).json({ success: false, error: 'projectPath and filePath are required' });
+      }
+
+      // Validate format
+      const validFormats = ['webp', 'avif'];
+      const targetFormat = format.toLowerCase();
+      if (!validFormats.includes(targetFormat)) {
+        return res.status(400).json({ success: false, error: `Invalid format. Use: ${validFormats.join(', ')}` });
+      }
+
+      // Validate quality
+      const q = Math.max(1, Math.min(100, parseInt(quality) || 80));
+
+      // Resolve absolute path safely
+      const absPath = isAbsolute(filePath) ? filePath : join(projectPath, filePath);
+      const normalised = normalize(absPath);
+
+      // Security: ensure file is within project
+      if (!normalised.startsWith(normalize(projectPath))) {
+        return res.status(400).json({ success: false, error: 'File must be within the project directory' });
+      }
+
+      if (!existsSync(normalised)) {
+        return res.status(404).json({ success: false, error: 'File not found' });
+      }
+
+      // Load sharp
+      let sharpLib;
+      try {
+        sharpLib = (await import('sharp')).default;
+      } catch (e) {
+        return res.status(500).json({
+          success: false,
+          error: 'sharp is not installed. Run: npm install sharp'
+        });
+      }
+
+      // Get original file info
+      const originalStat = statSync(normalised);
+      const originalSize = originalStat.size;
+      const ext = extname(normalised).toLowerCase();
+
+      // Build output path (same directory, new extension)
+      const outputPath = normalised.replace(/\.[^.]+$/, `.${targetFormat}`);
+
+      // Convert
+      let pipeline = sharpLib(normalised);
+      if (targetFormat === 'webp') {
+        pipeline = pipeline.webp({ quality: q });
+      } else if (targetFormat === 'avif') {
+        pipeline = pipeline.avif({ quality: q });
+      }
+
+      await pipeline.toFile(outputPath);
+
+      // Get new file size
+      const newStat = statSync(outputPath);
+      const newSize = newStat.size;
+      const savedBytes = originalSize - newSize;
+      const savedPercent = originalSize > 0 ? Math.round((savedBytes / originalSize) * 100) : 0;
+
+      // Find and replace references in source files
+      const relOriginal = relative(projectPath, normalised);
+      const relNew = relative(projectPath, outputPath);
+      const oldBasename = basename(normalised);
+      const newBasename = basename(outputPath);
+      let refsUpdated = 0;
+
+      // Search source files for references to the old filename
+      const sourceExts = ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.vue', '.html', '.css', '.scss', '.less', '.md', '.json', '.astro', '.svelte'];
+      const walkForRefs = (dir, depth = 0) => {
+        if (depth > 8) return [];
+        const found = [];
+        try {
+          const entries = readdirSync(dir, { withFileTypes: true });
+          for (const e of entries) {
+            if (e.name === 'node_modules' || e.name === '.git' || e.name === 'dist' || e.name === '.next') continue;
+            const full = join(dir, e.name);
+            if (e.isDirectory()) {
+              found.push(...walkForRefs(full, depth + 1));
+            } else if (sourceExts.some(ext => e.name.endsWith(ext))) {
+              found.push(full);
+            }
+          }
+        } catch {}
+        return found;
+      };
+
+      const sourceFiles = walkForRefs(projectPath);
+      for (const sf of sourceFiles) {
+        try {
+          const content = readFileSync(sf, 'utf8');
+          if (content.includes(oldBasename)) {
+            const updated = content.split(oldBasename).join(newBasename);
+            writeFileSync(sf, updated, 'utf8');
+            refsUpdated++;
+          }
+        } catch {}
+      }
+
+      // Delete original file after successful conversion + ref update
+      try {
+        unlinkSync(normalised);
+      } catch {}
+
+      res.json({
+        success: true,
+        original: {
+          path: normalised,
+          size: originalSize,
+          sizeFormatted: formatBytes(originalSize),
+          format: ext.replace('.', '').toUpperCase(),
+          deleted: true
+        },
+        optimised: {
+          path: outputPath,
+          size: newSize,
+          sizeFormatted: formatBytes(newSize),
+          format: targetFormat.toUpperCase()
+        },
+        savings: {
+          bytes: savedBytes,
+          formatted: formatBytes(savedBytes),
+          percent: savedPercent
+        },
+        referencesUpdated: refsUpdated
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
     }
   });
 
