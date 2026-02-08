@@ -3588,6 +3588,59 @@ export async function createRoutes() {
     }
   });
 
+  router.post('/fix/update-dep', async (req, res) => {
+    try {
+      const { projectPath, packageName, version } = req.body;
+      if (!projectPath || !packageName || !version) {
+        return res.status(400).json({ success: false, error: 'projectPath, packageName, and version required' });
+      }
+
+      // Validate package name and version (prevent command injection)
+      if (!/^[@a-z0-9][@a-z0-9._\-/]*$/i.test(packageName)) {
+        return res.status(400).json({ success: false, error: 'Invalid package name' });
+      }
+      if (!/^[0-9][0-9a-zA-Z._\-]*$/.test(version)) {
+        return res.status(400).json({ success: false, error: 'Invalid version' });
+      }
+
+      // Detect package manager from lockfiles
+      let cmd = 'npm';
+      let args = ['install', `${packageName}@${version}`];
+
+      if (existsSync(join(projectPath, 'pnpm-lock.yaml'))) {
+        cmd = 'pnpm';
+        args = ['add', `${packageName}@${version}`];
+      } else if (existsSync(join(projectPath, 'yarn.lock'))) {
+        cmd = 'yarn';
+        args = ['add', `${packageName}@${version}`];
+      } else if (existsSync(join(projectPath, 'bun.lockb')) || existsSync(join(projectPath, 'bun.lock'))) {
+        cmd = 'bun';
+        args = ['add', `${packageName}@${version}`];
+      }
+
+      const { execSync: exec } = await import('child_process');
+      const output = exec(`${cmd} ${args.join(' ')}`, {
+        cwd: projectPath,
+        timeout: 120000,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      res.json({
+        success: true,
+        packageManager: cmd,
+        command: `${cmd} ${args.join(' ')}`,
+        output: (output || '').trim().slice(0, 500)
+      });
+    } catch (error) {
+      const stderr = error.stderr ? error.stderr.toString().trim() : '';
+      res.status(500).json({
+        success: false,
+        error: stderr || error.message
+      });
+    }
+  });
+
   // ============================================
   // OPEN FILE IN EDITOR
   // ============================================
