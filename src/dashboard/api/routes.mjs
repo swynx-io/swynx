@@ -64,8 +64,8 @@ import { VERSION, checkForUpdate, getVersionInfo, installUpdate } from '../../cl
 import { getSettings, saveSettings, getSetting } from '../../config/store.mjs';
 import { availableParallelism, totalmem, freemem, platform } from 'os';
 import { execFile, execSync } from 'child_process';
-import { readdirSync, statSync, existsSync } from 'fs';
-import { join, basename, dirname } from 'path';
+import { readdirSync, statSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { join, basename, dirname, resolve, normalize, isAbsolute } from 'path';
 import {
   generateReport,
   generateDiffReport,
@@ -3387,6 +3387,98 @@ export async function createRoutes() {
 
     clearInterval(keepAlive);
     res.end();
+  });
+
+  // ============================================
+  // FILE READ/SAVE (inline editor)
+  // ============================================
+
+  // Validate file path stays within project directory
+  function validateFilePath(projectPath, filePath) {
+    if (!projectPath || !filePath) return null;
+    const resolved = resolve(projectPath, filePath);
+    const normalised = normalize(resolved);
+    if (!normalised.startsWith(normalize(projectPath))) return null;
+    return normalised;
+  }
+
+  // Map file extension to CodeMirror language id
+  function detectLanguage(filePath) {
+    const ext = (filePath.match(/\.([^.]+)$/) || [])[1]?.toLowerCase();
+    const map = {
+      js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript',
+      ts: 'javascript', mts: 'javascript', cts: 'javascript', tsx: 'javascript',
+      py: 'python', pyw: 'python',
+      go: 'go',
+      java: 'java', kt: 'java', kts: 'java',
+      rs: 'rust',
+      php: 'php',
+      c: 'cpp', cc: 'cpp', cpp: 'cpp', cxx: 'cpp', h: 'cpp', hpp: 'cpp',
+      css: 'css', scss: 'css', less: 'css',
+      html: 'html', htm: 'html', svelte: 'html', vue: 'html',
+      json: 'json',
+      md: 'markdown', mdx: 'markdown',
+      rb: 'text', swift: 'text', cs: 'text', dart: 'text',
+      sh: 'text', bash: 'text', zsh: 'text',
+      yml: 'text', yaml: 'text', toml: 'text', xml: 'text',
+    };
+    return map[ext] || 'text';
+  }
+
+  // Read file content
+  router.post('/file/read', async (req, res) => {
+    try {
+      const { projectPath, file } = req.body;
+      if (!projectPath || !file) {
+        return res.status(400).json({ success: false, error: 'projectPath and file are required' });
+      }
+
+      const fullPath = validateFilePath(projectPath, file);
+      if (!fullPath) {
+        return res.status(400).json({ success: false, error: 'Invalid file path' });
+      }
+
+      if (!existsSync(fullPath)) {
+        return res.status(404).json({ success: false, error: 'File not found' });
+      }
+
+      const stat = statSync(fullPath);
+      if (stat.size > 2 * 1024 * 1024) {
+        return res.status(413).json({ success: false, error: 'File too large (max 2MB)' });
+      }
+
+      const content = readFileSync(fullPath, 'utf-8');
+      const language = detectLanguage(fullPath);
+      res.json({ success: true, content, size: stat.size, language });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Save file content
+  router.post('/file/save', async (req, res) => {
+    try {
+      const { projectPath, file, content } = req.body;
+      if (!projectPath || !file || content === undefined) {
+        return res.status(400).json({ success: false, error: 'projectPath, file, and content are required' });
+      }
+
+      const fullPath = validateFilePath(projectPath, file);
+      if (!fullPath) {
+        return res.status(400).json({ success: false, error: 'Invalid file path' });
+      }
+
+      // Only allow saving existing files (no creating new files via this endpoint)
+      if (!existsSync(fullPath)) {
+        return res.status(404).json({ success: false, error: 'File not found — can only save existing files' });
+      }
+
+      writeFileSync(fullPath, content, 'utf-8');
+      const stat = statSync(fullPath);
+      res.json({ success: true, size: stat.size, savedAt: new Date().toISOString() });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   });
 
   // ============================================
