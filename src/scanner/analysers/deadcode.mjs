@@ -193,7 +193,11 @@ function isNestedPackageMain(filePath, projectPath) {
     // so only flag truly empty packages as abandoned.
     if (pkgName && !_dependedPackagesCache?.has(pkgName) && !hasInternalDeps) {
       const hasPublishableFields = pkgJson.main || pkgJson.module || pkgJson.source || pkgJson.exports;
-      if (!hasPublishableFields) {
+      // Framework apps (Ember, Angular, etc.) are valid even without main/module/exports
+      const isFrameworkApp = pkgJson.ember || pkgJson['ember-addon'] ||
+        pkgJson.angular || pkgJson['ng-package'] ||
+        (pkgJson.scripts && (pkgJson.scripts.start || pkgJson.scripts.dev || pkgJson.scripts.build));
+      if (!hasPublishableFields && !isFrameworkApp) {
         return { isMain: false, isAbandoned: true };
       }
     }
@@ -859,8 +863,9 @@ function extractPathAliases(projectPath) {
             }
 
             // Only add trailing slash for directory-style aliases (those that had *)
+            // But not for empty targetPath (maps to project root, e.g. "@/*": ["./*"])
             const isDirectoryAlias = alias.endsWith('*') || targets[0].endsWith('*');
-            if (isDirectoryAlias && !targetPath.endsWith('/')) targetPath += '/';
+            if (isDirectoryAlias && targetPath && !targetPath.endsWith('/')) targetPath += '/';
 
             // Current config overrides inherited
             inheritedResolvedPaths.set(aliasPrefix, targetPath);
@@ -1709,6 +1714,8 @@ const ENTRY_POINT_PATTERNS = [
   // Match test/spec files by suffix (actual test files)
   // Also matches multi-part test suffixes like .test.api.ts, .test.cli.js
   /\.(test|spec)(\.\w+)*\.([mc]?[jt]s|[jt]sx)$/,
+  // Hyphenated test files: *-test.ts, *-spec.ts (Deno, QUnit, Ember convention)
+  /[-_](test|spec)\.([mc]?[jt]s|[jt]sx)$/,
   // Type test files (.test-d.ts, .test-d.tsx) used by tsd/vitest typecheck
   /\.test-d\.([mc]?[jt]s|[jt]sx)$/,
   // Type checking test files (*.type-tests.ts, *.typecheck.ts) used by expect-type/tsd
@@ -2363,6 +2370,13 @@ const ENTRY_POINT_PATTERNS = [
   // e.g., tests/generate_migrations/diff_add_table/schema.rs, tests/print_schema/*/expected.rs
   /\/tests?\/.+\/.+\/.*\.rs$/, /^tests?\/.+\/.+\/.*\.rs$/,
 
+  // === Rust crate resource directories (test fixtures, corpus data, benchmark inputs) ===
+  // Files loaded via include_str!, include_bytes!, or std::fs at runtime
+  // e.g., crates/ruff_python_parser/resources/valid/statement/match.py
+  /\/resources\/(valid|invalid|corpus|inline|fixtures?|data|expected|err|ok)\//,
+  // Resources/ dir inside crates/ (Rust workspace convention for test data)
+  /crates\/[^/]+\/resources\//, /^crates\/[^/]+\/resources\//,
+
   // === Playground/dev directories (development environments) ===
   /\/playgrounds?\//, /^playgrounds?\//,
   /^[^/]+\/dev\//, /\/dev\/src\//,
@@ -2420,12 +2434,12 @@ const ENTRY_POINT_PATTERNS = [
 
   // === Ember.js convention files (auto-discovered by Ember CLI at runtime) ===
   /ember-cli-build\.js$/,
-  /\/app\/services\/[^/]+\.([jt]s)$/,
-  /\/app\/serializers\/[^/]+\.([jt]s)$/,
-  /\/app\/initializers\/[^/]+\.([jt]s)$/,
-  /\/app\/instance-initializers\/[^/]+\.([jt]s)$/,
-  /\/app\/adapters\/[^/]+\.([jt]s)$/,
-  /\/app\/transforms\/[^/]+\.([jt]s)$/,
+  // Ember auto-resolved directories (any depth): controllers, models, routes, components, helpers, etc.
+  /\/app\/(services|serializers|initializers|instance-initializers|adapters|transforms)\//,
+  /\/app\/(controllers|models|routes|components|helpers|mixins|modifiers|machines|abilities)\//,
+  // Mirage test fixtures (loaded by ember-cli-mirage)
+  /\/mirage\/(config|scenarios|factories|fixtures|models|serializers|identity-managers)\//,
+  /\/mirage\/config\.js$/,
 
   // === Generated Go mock files (mockery, gomock, etc.) ===
   /\/grpcmocks?\//, /^grpcmocks?\//,
@@ -2952,7 +2966,7 @@ function isEntryPoint(filePath, packageJson = {}, projectPath = null, htmlEntryP
   // When main/module/exports points to a build directory (lib/, dist/, build/, out/),
   // map back to source equivalents (src/) since we analyze source, not build output.
   // e.g., main: "lib/framework.js" → check src/framework.ts, src/index.ts, etc.
-  const buildDirPattern = /^(lib|dist|build|out)\//;
+  const buildDirPattern = /^(lib|dist|build|out)(\/|$)/;
   const sourceExtensions = ['.ts', '.tsx', '.mts', '.js', '.mjs', '.jsx'];
   const buildEntries = [
     packageJson.main,
@@ -2983,6 +2997,12 @@ function isEntryPoint(filePath, packageJson = {}, projectPath = null, htmlEntryP
             return { isEntry: true, reason: `Package main (source fallback for ${buildDir}/)` };
           }
         }
+      }
+      // When main points to a build dir (lib/, dist/), all src/ files are part of
+      // the published package. Mark them as entry points — many libraries use dynamic
+      // require/import patterns that can't be traced statically.
+      if (filePath.startsWith('src/') || filePath.includes('/src/')) {
+        return { isEntry: true, reason: `Package source (build dir ${buildDir}/ detected)` };
       }
     }
   }
@@ -5210,6 +5230,24 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // This builds a transitive dependency graph so all files in referenced projects are entry points
   const csprojReferencedDirs = parseCsprojReferences(projectPath);
 
+  // Detect Deno workspaces (deno.json with "workspace" array)
+  // Each workspace member's mod.ts/main.ts is an entry point
+  const denoWorkspaceDirs = new Set();
+  if (projectPath) {
+    try {
+      const denoConfigPath = join(projectPath, 'deno.json');
+      if (existsSync(denoConfigPath)) {
+        const denoConfig = JSON.parse(readFileSync(denoConfigPath, 'utf-8'));
+        if (Array.isArray(denoConfig.workspace)) {
+          for (const member of denoConfig.workspace) {
+            const dir = member.replace(/^\.\//, '').replace(/\/$/, '');
+            denoWorkspaceDirs.add(dir);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   // Set up dynamic package.json fields from config
   const dynamicPackageFields = config.dynamicPackageFields || config.deadCode?.dynamicPackageFields ||
     ['nodes', 'plugins', 'credentials', 'extensions', 'adapters', 'connectors'];
@@ -5432,6 +5470,53 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       }
     }
 
+    // Deno workspace: treat mod.ts/main.ts in each workspace member as entry point
+    // Also treat all exported files from member deno.json as entry points
+    if (denoWorkspaceDirs.size > 0 && /\.[mc]?[jt]sx?$/.test(filePath)) {
+      const fileDir = dirname(filePath);
+      for (const wsDir of denoWorkspaceDirs) {
+        if (fileDir === wsDir || fileDir.startsWith(wsDir + '/')) {
+          const fileName = basename(filePath);
+          // mod.ts and main.ts are explicit entry points
+          if (fileName === 'mod.ts' || fileName === 'main.ts' || fileName === 'mod.js' || fileName === 'main.js') {
+            entryPointFiles.add(filePath);
+            results.entryPoints.push({
+              file: filePath,
+              reason: `Deno workspace entry: ${wsDir}`,
+              isDynamic: false
+            });
+          }
+          // Also check if this file is referenced in the member's deno.json exports
+          if (!entryPointFiles.has(filePath) && projectPath) {
+            try {
+              const memberDenoJson = join(projectPath, wsDir, 'deno.json');
+              if (existsSync(memberDenoJson)) {
+                const memberConfig = JSON.parse(readFileSync(memberDenoJson, 'utf-8'));
+                if (memberConfig.exports) {
+                  const exportPaths = typeof memberConfig.exports === 'string'
+                    ? [memberConfig.exports]
+                    : Object.values(memberConfig.exports);
+                  for (const ep of exportPaths) {
+                    const resolvedExport = join(wsDir, ep.replace(/^\.\//, '')).replace(/\\/g, '/');
+                    if (filePath === resolvedExport) {
+                      entryPointFiles.add(filePath);
+                      results.entryPoints.push({
+                        file: filePath,
+                        reason: `Deno workspace export: ${wsDir}`,
+                        isDynamic: false
+                      });
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+          break;
+        }
+      }
+    }
+
     // Check multi-language metadata for entry point indicators
     if (file.metadata) {
       // Python entry points
@@ -5594,6 +5679,11 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     // (e.g., store/dist/store, compat/dist/compat)
     function _distToSrcCandidates(rawPath) {
       const candidates = [rawPath];
+      // Always try src/ prefix as a fallback (many libraries compile src/ → root)
+      // e.g., lit-html.js → src/lit-html.ts, reactive-element.js → src/reactive-element.ts
+      if (!/^(src|dist|lib|build|out)[\/-]/.test(rawPath) && !rawPath.includes('/src/')) {
+        candidates.push('src/' + rawPath);
+      }
       // Leading dist-cjs/, dist-es/, dist-types/ etc. (AWS SDK v3 pattern)
       if (/^dist-\w+\//.test(rawPath)) {
         candidates.push(rawPath.replace(/^dist-\w+\//, 'src/'));
@@ -5789,6 +5879,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       name: e.name,
       type: e.type,
       line: e.line,
+      lineEnd: e.lineEnd,
+      status: 'dead',
       sourceLine: e.line && contentLines[e.line - 1] ? contentLines[e.line - 1].trimEnd() : undefined
     }));
 
@@ -5879,6 +5971,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           name: exportName,
           type: exp.type || 'unknown',
           line: exp.line || 0,
+          lineEnd: exp.lineEnd,
           status: 'live',
           importedBy: importers.map(u => u.importerFile)
         });
@@ -5887,6 +5980,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           name: exportName,
           type: exp.type || 'unknown',
           line: exp.line || 0,
+          lineEnd: exp.lineEnd,
           status: 'dead',
           importedBy: []
         });
