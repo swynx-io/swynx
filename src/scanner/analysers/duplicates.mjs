@@ -126,6 +126,9 @@ export async function findDuplicates(jsAnalysis, onProgress = () => {}) {
     if (allFunctions.length >= MAX_FUNCTIONS_TOTAL) break;
   }
 
+  onProgress({ current: total, total, file: `Collected ${allFunctions.length} functions, finding duplicates...` });
+  await new Promise(resolve => setImmediate(resolve));
+
   // Group functions by hash (exact duplicates)
   const hashGroups = new Map();
   for (const func of allFunctions) {
@@ -207,7 +210,8 @@ export async function findDuplicates(jsAnalysis, onProgress = () => {}) {
 
   if (remainingFunctions.length <= MAX_FUNCTIONS_FOR_NEAR_DUPLICATES) {
     // Compare remaining functions for similarity (O(n²) - only safe for small n)
-    nearDuplicateGroups = findNearDuplicates(remainingFunctions);
+    onProgress({ current: total, total, file: `Comparing ${remainingFunctions.length} functions for similarity...` });
+    nearDuplicateGroups = await findNearDuplicates(remainingFunctions);
   } else {
     // Skip for large codebases - exact hash matches are already found above
     skippedNearDuplicates = true;
@@ -324,9 +328,10 @@ function hashCode(code) {
 /**
  * Find groups of near-duplicate functions using similarity comparison
  */
-function findNearDuplicates(functions) {
+async function findNearDuplicates(functions) {
   const groups = [];
   const used = new Set();
+  let comparisons = 0;
 
   for (let i = 0; i < functions.length; i++) {
     if (used.has(i)) continue;
@@ -346,6 +351,12 @@ function findNearDuplicates(functions) {
         functions[j].similarity = Math.round(similarity * 100);
         group.push(functions[j]);
         used.add(j);
+      }
+
+      // Yield to the event loop every 500 comparisons so SSE heartbeats
+      // can flow and the browser connection stays alive
+      if (++comparisons % 500 === 0) {
+        await new Promise(resolve => setImmediate(resolve));
       }
     }
 
