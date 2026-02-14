@@ -1,6 +1,10 @@
 name: Dead Code Check
 on: [pull_request]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   swynx:
     runs-on: ubuntu-latest
