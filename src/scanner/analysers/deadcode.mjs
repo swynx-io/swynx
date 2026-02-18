@@ -6482,6 +6482,419 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     }
   }
 
+  // ── Python private dead method detection ──────────────────────────────
+  // _prefixed class methods are private by convention in Python.
+  // Unlike Java, Python private methods CAN be called via inheritance from
+  // sibling files in the same package (directory).  So we check the entire
+  // package directory, similar to Go's approach.
+  const pyRegex = /\.py$/;
+  const pyFrameworkDecorators = new Set([
+    'abstractmethod', 'override',
+    'pytest.fixture', 'fixture',
+    'validator', 'field_validator', 'model_validator', 'root_validator',
+    'receiver',
+    'task', 'shared_task',
+    'hookimpl', 'hookspec',
+    'register',
+    'dispatch', 'singledispatchmethod',
+  ]);
+
+  // Detect Python dynamic dispatch prefixes project-wide:
+  // getattr(self, f"_prefix_{...}"), __dict__.get(f"_prefix_{...}"), etc.
+  const pyDynamicPrefixes = new Set();
+  for (const file of analysisFiles) {
+    const fp = file.file?.relativePath || file.file;
+    if (!pyRegex.test(fp)) continue;
+    const content = file.content || '';
+    if (!content) {
+      try {
+        const c = readFileSync(join(projectPath, fp), 'utf-8');
+        // getattr(obj, f"_prefix_{...}") or __dict__.get(f"_prefix_{...}")
+        const getattrRe = /(?:getattr|__dict__\s*\.get)\s*\(\s*[^,]*,\s*f?["']_(\w+?)_?\{/g;
+        let gm;
+        while ((gm = getattrRe.exec(c)) !== null) {
+          pyDynamicPrefixes.add('_' + gm[1]);
+        }
+        // Also: handler_name = f"on_{name}" → methods are _on_* (with _ prefix)
+        const handlerRe = /handler_name\s*=\s*f["'](\w+?)_?\{/g;
+        while ((gm = handlerRe.exec(c)) !== null) {
+          pyDynamicPrefixes.add('_' + gm[1]);
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  // Group Python files by directory (package)
+  const pyFilesByDir = new Map();
+  for (const file of analysisFiles) {
+    const filePath = file.file?.relativePath || file.file;
+    if (!pyRegex.test(filePath)) continue;
+    const dir = dirname(filePath);
+    if (!pyFilesByDir.has(dir)) pyFilesByDir.set(dir, []);
+    pyFilesByDir.get(dir).push(filePath);
+  }
+
+  for (const [pyDir, pyFiles] of pyFilesByDir) {
+    // Collect candidates from reachable non-test files in this package
+    const pyCandidates = [];
+    for (const filePath of pyFiles) {
+      if (!reachableFiles.has(filePath)) continue;
+      if (/(?:(?:^|\/)tests?\/|_test\.py$|test_[^/]*\.py$|\/conftest\.py$|\/fixtures?\/)/.test(filePath)) continue;
+
+      const fns = fileFunctions.get(filePath);
+      if (!fns || fns.length === 0) continue;
+
+      for (const fn of fns) {
+        if (!fn.className) continue;  // Only class methods, not module-level
+        if (!fn.name.startsWith('_')) continue;
+        if (fn.name.startsWith('__') && fn.name.endsWith('__')) continue;  // Skip dunder
+        if (fn.name === '_') continue;
+        // Enum protocol methods (called by metaclass, not directly)
+        if (fn.name === '_generate_next_value_' || fn.name === '_missing_' || fn.name === '_ignore_') continue;
+        if (fn.decorators && fn.decorators.some(d => {
+          const baseName = d.name.split('.').pop();
+          return pyFrameworkDecorators.has(d.name) || pyFrameworkDecorators.has(baseName) ||
+                 d.name.endsWith('.setter') || d.name.endsWith('.deleter');
+        })) continue;
+        // Skip methods matching dynamic dispatch prefixes
+        if (pyDynamicPrefixes.size > 0) {
+          let pyDynMatch = false;
+          for (const prefix of pyDynamicPrefixes) {
+            if (fn.name.startsWith(prefix + '_') || fn.name === prefix) { pyDynMatch = true; break; }
+          }
+          if (pyDynMatch) continue;
+        }
+        pyCandidates.push({ ...fn, filePath });
+      }
+    }
+
+    if (pyCandidates.length === 0) continue;
+
+    // Read all package files (including tests — they're valid call sites)
+    const pyPkgContents = new Map();
+    for (const fp of pyFiles) {
+      try {
+        pyPkgContents.set(fp, readFileSync(join(projectPath, fp), 'utf-8'));
+      } catch { /* skip unreadable */ }
+    }
+
+    for (const cand of pyCandidates) {
+      const nameRe = new RegExp(`\\b${cand.name}\\b`, 'g');
+      let totalMatches = 0;
+
+      for (const [fp, content] of pyPkgContents) {
+        if (fp === cand.filePath) {
+          // In declaring file: count matches (definition is 1, any call adds more)
+          const m = content.match(nameRe);
+          totalMatches += m ? m.length : 0;
+        } else {
+          // In other package files: any match means it's used
+          if (nameRe.test(content)) { totalMatches = 999; break; }
+          nameRe.lastIndex = 0;
+        }
+      }
+
+      if (totalMatches <= 1) {
+        // Python methods can be called via inheritance from ANY file in the project.
+        // Do a project-wide check for methods that appear dead at the package level.
+        let foundElsewhere = false;
+        for (const [otherDir, otherFiles] of pyFilesByDir) {
+          if (otherDir === pyDir) continue;  // Already checked
+          for (const otherFp of otherFiles) {
+            try {
+              const otherContent = readFileSync(join(projectPath, otherFp), 'utf-8');
+              nameRe.lastIndex = 0;
+              if (nameRe.test(otherContent)) { foundElsewhere = true; break; }
+            } catch { /* skip */ }
+          }
+          if (foundElsewhere) break;
+        }
+        if (foundElsewhere) continue;
+
+        const sizeBytes = cand.sizeBytes || 0;
+        results.deadFunctions.push({
+          name: cand.name,
+          file: cand.filePath,
+          line: cand.line,
+          endLine: cand.endLine || 0,
+          lineCount: cand.lineCount || 0,
+          sizeBytes,
+          language: 'python',
+          reason: 'private-never-called'
+        });
+        results.summary.totalDeadFunctions++;
+        results.summary.totalDeadFunctionBytes += sizeBytes;
+      }
+    }
+  }
+
+  // ── C# private dead method detection ──────────────────────────────────
+  // Private methods can only be called within the same file.
+  // For each reachable .cs file, find private methods never referenced
+  // elsewhere in the file.
+  const csRegex = /\.cs$/;
+  const csFrameworkAttributes = new Set([
+    'Test', 'Fact', 'Theory', 'TestMethod', 'TestCase',
+    'SetUp', 'TearDown', 'OneTimeSetUp', 'OneTimeTearDown',
+    'TestInitialize', 'TestCleanup', 'ClassInitialize', 'ClassCleanup',
+    'Benchmark', 'GlobalSetup', 'GlobalCleanup', 'IterationSetup', 'IterationCleanup',
+    'HttpGet', 'HttpPost', 'HttpPut', 'HttpDelete', 'HttpPatch',
+    'Subscribe', 'EventHandler',
+    'Inject',
+    'JsonConstructor', 'JsonConverter',
+    'OnDeserialized', 'OnDeserializing', 'OnSerialized', 'OnSerializing',
+    'Command', 'ClientRpc', 'ServerRpc',
+    'Button', 'SerializeField',
+    'MenuItem',
+    'RuntimeInitializeOnLoadMethod',
+  ]);
+
+  for (const file of analysisFiles) {
+    const filePath = file.file?.relativePath || file.file;
+    if (!csRegex.test(filePath)) continue;
+    if (!reachableFiles.has(filePath)) continue;
+    if (/(?:\/[Tt]ests?\/|\.Tests?\.|Test\.cs$|Tests\.cs$|\.test\.cs$)/i.test(filePath)) continue;
+    if (/(?:\.g\.cs$|\.generated\.cs$|\.designer\.cs$|\/obj\/)/i.test(filePath)) continue;
+
+    const fns = fileFunctions.get(filePath);
+    if (!fns || fns.length === 0) continue;
+
+    const csCandidates = [];
+    for (const fn of fns) {
+      if (fn.visibility !== 'private') continue;
+      if (fn.name === 'Dispose' || fn.name === 'Finalize') continue;
+      if (/_[A-Z]\w+$/.test(fn.name)) continue;  // Event handlers (Button_Click etc.)
+      const attrs = fn.attributes || fn.decorators || [];
+      if (attrs.some(a => csFrameworkAttributes.has(a.name))) continue;
+      csCandidates.push(fn);
+    }
+
+    if (csCandidates.length === 0) continue;
+
+    let csContent;
+    try {
+      csContent = readFileSync(join(projectPath, filePath), 'utf-8');
+    } catch { continue; }
+
+    for (const cand of csCandidates) {
+      const nameRe = new RegExp(`\\b${cand.name}\\b`, 'g');
+      const matches = csContent.match(nameRe);
+      if (!matches || matches.length <= 1) {
+        const sizeBytes = cand.sizeBytes || 0;
+        results.deadFunctions.push({
+          name: cand.name,
+          file: filePath,
+          line: cand.line,
+          endLine: cand.endLine || 0,
+          lineCount: cand.lineCount || (cand.endLine ? cand.endLine - cand.line + 1 : 0),
+          sizeBytes,
+          language: 'csharp',
+          reason: 'private-never-called'
+        });
+        results.summary.totalDeadFunctions++;
+        results.summary.totalDeadFunctionBytes += sizeBytes;
+      }
+    }
+  }
+
+  // ── PHP private dead method detection ─────────────────────────────────
+  // Private methods can only be called within the same class (file-scoped),
+  // but PHP traits share private methods across files via `use`.
+  // Pre-read all PHP files once for efficient project-wide checking.
+  const phpRegex = /\.php$/;
+  const phpAllContents = new Map();
+  for (const file of analysisFiles) {
+    const fp = file.file?.relativePath || file.file;
+    if (!phpRegex.test(fp)) continue;
+    try { phpAllContents.set(fp, readFileSync(join(projectPath, fp), 'utf-8')); } catch { /* skip */ }
+  }
+
+  for (const [filePath, phpContent] of phpAllContents) {
+    if (!reachableFiles.has(filePath)) continue;
+    if (/(?:(?:^|\/)tests?\/|Test\.php$|_test\.php$|\/[Ff]ixtures?\/)/i.test(filePath)) continue;
+    if (/(?:\/migrations?\/|\/seeds?\/|\/seeders?\/|\/factories\/|\/stubs\/|\/views\/|\/resources\/)/.test(filePath)) continue;
+
+    // Extract private methods via regex
+    const privateMethodRe = /^\s*private\s+(?:static\s+)?function\s+(\w+)\s*\(/gm;
+    const phpCandidates = [];
+    let pm;
+    while ((pm = privateMethodRe.exec(phpContent)) !== null) {
+      const name = pm[1];
+      if (name.startsWith('__')) continue;  // Magic methods
+      const line = phpContent.slice(0, pm.index).split('\n').length;
+      phpCandidates.push({ name, line });
+    }
+
+    if (phpCandidates.length === 0) continue;
+
+    // Detect dynamic dispatch: $this->$method, $this->{$method}, call_user_func
+    const hasDynamicDispatch = /\$this->\$|\$this->\{|\bcall_user_func/.test(phpContent);
+
+    for (const cand of phpCandidates) {
+      if (hasDynamicDispatch) {
+        const underscoreIdx = cand.name.indexOf('_');
+        if (underscoreIdx > 0) {
+          const prefix = cand.name.slice(0, underscoreIdx + 1);
+          const prefixInString = new RegExp(`['"]${prefix}[{$]`);
+          if (prefixInString.test(phpContent)) continue;
+        }
+      }
+
+      const nameRe = new RegExp(`\\b${cand.name}\\b`, 'g');
+      const matches = phpContent.match(nameRe);
+      if (!matches || matches.length <= 1) {
+        // Check all other PHP files using pre-read cache
+        let phpFoundElsewhere = false;
+        for (const [otherPath, otherContent] of phpAllContents) {
+          if (otherPath === filePath) continue;
+          nameRe.lastIndex = 0;
+          if (nameRe.test(otherContent)) { phpFoundElsewhere = true; break; }
+        }
+        if (phpFoundElsewhere) continue;
+
+        results.deadFunctions.push({
+          name: cand.name,
+          file: filePath,
+          line: cand.line,
+          endLine: 0,
+          lineCount: 0,
+          sizeBytes: 0,
+          language: 'php',
+          reason: 'private-never-called'
+        });
+        results.summary.totalDeadFunctions++;
+      }
+    }
+  }
+
+  // ── Ruby private dead method detection ────────────────────────────────
+  // Ruby uses `private` keyword to mark subsequent methods as private.
+  // Modules/concerns can share methods via include/extend, so we check
+  // all Ruby files in the project. Pre-read all files once for efficiency.
+  const rbRegex = /\.rb$/;
+  const rbAllContents = new Map();
+  for (const file of analysisFiles) {
+    const fp = file.file?.relativePath || file.file;
+    if (!rbRegex.test(fp)) continue;
+    try { rbAllContents.set(fp, readFileSync(join(projectPath, fp), 'utf-8')); } catch { /* skip */ }
+  }
+
+  // Detect dynamic dispatch prefixes project-wide: send(:"prefix_#{...}"), send("prefix_#{...}"),
+  // define_method(:"prefix_#{...}"), and indirect send with variable (visitor pattern).
+  const rbDynamicPrefixes = new Set();
+  for (const [, rbContent] of rbAllContents) {
+    // Direct string interpolation: send(:"prefix_#{...}"), send("prefix_#{...}"), send(:prefix)
+    // Ruby :"..." is symbol with interpolation; the : and " are separate
+    const sendPrefixRe = /\bsend\s*[\(]\s*:?"?'?(\w+)_(?:#\{)/g;
+    let spm;
+    while ((spm = sendPrefixRe.exec(rbContent)) !== null) {
+      rbDynamicPrefixes.add(spm[1]);
+    }
+    // define_method with interpolation
+    const defineMethodRe = /\bdefine_method\s*[\(]\s*:?"?'?(\w+)_(?:#\{)/g;
+    while ((spm = defineMethodRe.exec(rbContent)) !== null) {
+      rbDynamicPrefixes.add(spm[1]);
+    }
+    // Indirect dispatch: "dispatch[klass]" + send — visitor pattern
+    // Detect: hash dispatch → send pattern (Arel visitors, etc.)
+    if (/\bdispatch\s*\[/.test(rbContent) && /\bsend\s+dispatch/.test(rbContent)) {
+      rbDynamicPrefixes.add('visit');
+    }
+    // Method reflection dispatch: methods.grep(/^prefix_/) { send(method_name) }
+    // Catches: private_methods.grep(/^audit_/).each { send(name) }
+    const grepPrefixRe = /\.grep\s*\(\s*\/\^(\w+?)_?\//g;
+    while ((spm = grepPrefixRe.exec(rbContent)) !== null) {
+      if (/\bsend\b/.test(rbContent)) {
+        rbDynamicPrefixes.add(spm[1]);
+      }
+    }
+    // Symbol interpolation anywhere: :"prefix_#{...}" (e.g., step_name = :"fetch_#{name}")
+    // This covers indirect dispatch via method() or send with a variable
+    const symbolInterpRe = /:"(\w+?)_#\{/g;
+    while ((spm = symbolInterpRe.exec(rbContent)) !== null) {
+      rbDynamicPrefixes.add(spm[1]);
+    }
+  }
+
+  for (const [filePath, rbContent] of rbAllContents) {
+    if (!reachableFiles.has(filePath)) continue;
+    if (/(?:(?:^|\/)(?:spec|test)s?\/|_spec\.rb$|_test\.rb$)/.test(filePath)) continue;
+    if (/(?:\/migrations?\/|\/db\/(?:seeds|schema)|\/views\/|\/config\/|\/fixtures?\/)/.test(filePath)) continue;
+
+    const rbLines = rbContent.split('\n');
+    let inPrivateSection = false;
+    const rbCandidates = [];
+
+    for (let ri = 0; ri < rbLines.length; ri++) {
+      const rline = rbLines[ri].trim();
+
+      if (/^private\s*$/.test(rline) || /^private\s*#/.test(rline)) {
+        inPrivateSection = true;
+        continue;
+      }
+      if (/^(?:public|protected)\s*$/.test(rline) || /^(?:public|protected)\s*#/.test(rline)) {
+        inPrivateSection = false;
+        continue;
+      }
+      if (/^(?:class|module)\s+/.test(rline)) {
+        inPrivateSection = false;
+        continue;
+      }
+
+      const inlinePrivateMatch = rline.match(/^private\s+def\s+(\w+[?!=]?)/);
+      if (inlinePrivateMatch) {
+        rbCandidates.push({ name: inlinePrivateMatch[1], line: ri + 1 });
+        continue;
+      }
+
+      if (inPrivateSection) {
+        const defMatch = rline.match(/^def\s+(\w+[?!=]?)/);
+        if (defMatch) {
+          rbCandidates.push({ name: defMatch[1], line: ri + 1 });
+        }
+      }
+    }
+
+    if (rbCandidates.length === 0) continue;
+
+    for (const cand of rbCandidates) {
+      // Skip if method name matches a project-wide dynamic dispatch prefix
+      if (rbDynamicPrefixes.size > 0) {
+        let dynamicMatch = false;
+        for (const prefix of rbDynamicPrefixes) {
+          if (cand.name.startsWith(prefix + '_') || cand.name === prefix) { dynamicMatch = true; break; }
+        }
+        if (dynamicMatch) continue;
+      }
+
+      const escaped = cand.name.replace(/([?!=])/g, '\\$1');
+      const nameRe = new RegExp(`\\b${escaped}`, 'g');
+      const matches = rbContent.match(nameRe);
+      if (!matches || matches.length <= 1) {
+        // Check all other Ruby files using pre-read cache
+        let rbFoundElsewhere = false;
+        for (const [otherPath, otherContent] of rbAllContents) {
+          if (otherPath === filePath) continue;
+          nameRe.lastIndex = 0;
+          if (nameRe.test(otherContent)) { rbFoundElsewhere = true; break; }
+        }
+        if (rbFoundElsewhere) continue;
+
+        results.deadFunctions.push({
+          name: cand.name,
+          file: filePath,
+          line: cand.line,
+          endLine: 0,
+          lineCount: 0,
+          sizeBytes: 0,
+          language: 'ruby',
+          reason: 'private-never-called'
+        });
+        results.summary.totalDeadFunctions++;
+      }
+    }
+  }
+
   // Per-export dead export detection for reachable JS/TS/Python files
   const jstspyRegex = /\.([mc]?[jt]s|[jt]sx|py|pyi)$/;
   // Build a quick lookup from jsAnalysis for exports by file path
