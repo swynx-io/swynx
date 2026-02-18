@@ -138,6 +138,8 @@ export function parse(filePath, content) {
         isLaravel,
         isSymfony,
         isWordPress,
+        isTest: /Test\.php$/.test(filePath) || /\/tests?\//.test(filePath) ||
+                classes.some(c => c.name.endsWith('Test') || (c.extends && c.extends.includes('TestCase'))),
         isController: classes.some(c => c.name.includes('Controller') || (c.extends && c.extends.includes('Controller'))),
         isModel: classes.some(c => c.extends && (c.extends.includes('Model') || c.extends.includes('Eloquent'))),
         isMigration: classes.some(c => c.extends && c.extends.includes('Migration'))

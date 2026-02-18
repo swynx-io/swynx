@@ -174,6 +174,24 @@ export function categoriseFiles(files) {
     csharp: [],
     go: [],
     rust: [],
+    php: [],
+    ruby: [],
+    swift: [],
+    dart: [],
+    scala: [],
+    elixir: [],
+    haskell: [],
+    fsharp: [],
+    ocaml: [],
+    julia: [],
+    zig: [],
+    nim: [],
+    erlang: [],
+    crystal: [],
+    vlang: [],
+    perl: [],
+    clojure: [],
+    vbnet: [],
     css: [],
     assets: [],
     other: []
@@ -195,6 +213,42 @@ export function categoriseFiles(files) {
       categories.go.push(file);
     } else if (['.rs'].includes(ext)) {
       categories.rust.push(file);
+    } else if (['.php'].includes(ext)) {
+      categories.php.push(file);
+    } else if (['.rb'].includes(ext)) {
+      categories.ruby.push(file);
+    } else if (['.swift'].includes(ext)) {
+      categories.swift.push(file);
+    } else if (['.dart'].includes(ext)) {
+      categories.dart.push(file);
+    } else if (['.scala', '.sc'].includes(ext)) {
+      categories.scala.push(file);
+    } else if (['.ex', '.exs'].includes(ext)) {
+      categories.elixir.push(file);
+    } else if (['.hs', '.lhs'].includes(ext)) {
+      categories.haskell.push(file);
+    } else if (['.fs'].includes(ext)) {
+      categories.fsharp.push(file);
+    } else if (['.ml', '.mli'].includes(ext)) {
+      categories.ocaml.push(file);
+    } else if (['.jl'].includes(ext)) {
+      categories.julia.push(file);
+    } else if (['.zig'].includes(ext)) {
+      categories.zig.push(file);
+    } else if (['.nim'].includes(ext)) {
+      categories.nim.push(file);
+    } else if (['.erl', '.hrl'].includes(ext)) {
+      categories.erlang.push(file);
+    } else if (['.cr'].includes(ext)) {
+      categories.crystal.push(file);
+    } else if (['.v'].includes(ext)) {
+      categories.vlang.push(file);
+    } else if (['.pl', '.pm'].includes(ext)) {
+      categories.perl.push(file);
+    } else if (['.clj', '.cljs', '.cljc'].includes(ext)) {
+      categories.clojure.push(file);
+    } else if (['.vb'].includes(ext)) {
+      categories.vbnet.push(file);
     } else if (['.css', '.scss', '.sass', '.less'].includes(ext)) {
       categories.css.push(file);
     } else if (['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.woff', '.woff2', '.ttf', '.eot'].includes(ext)) {

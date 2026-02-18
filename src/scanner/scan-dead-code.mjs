@@ -112,8 +112,20 @@ function detectLanguage(filePath) {
   if (/\.cs$/.test(filePath)) return 'csharp';
   if (/\.dart$/.test(filePath)) return 'dart';
   if (/\.swift$/.test(filePath)) return 'swift';
-  if (/\.scala$/.test(filePath)) return 'scala';
+  if (/\.scala$|\.sc$/.test(filePath)) return 'scala';
   if (/\.ex$|\.exs$/.test(filePath)) return 'elixir';
+  if (/\.hs$|\.lhs$/.test(filePath)) return 'haskell';
+  if (/\.fs$/.test(filePath)) return 'fsharp';
+  if (/\.ml$|\.mli$/.test(filePath)) return 'ocaml';
+  if (/\.jl$/.test(filePath)) return 'julia';
+  if (/\.zig$/.test(filePath)) return 'zig';
+  if (/\.nim$/.test(filePath)) return 'nim';
+  if (/\.erl$|\.hrl$/.test(filePath)) return 'erlang';
+  if (/\.cr$/.test(filePath)) return 'crystal';
+  if (/\.v$/.test(filePath)) return 'vlang';
+  if (/\.pl$|\.pm$/.test(filePath)) return 'perl';
+  if (/\.clj$|\.cljs$|\.cljc$/.test(filePath)) return 'clojure';
+  if (/\.vb$/.test(filePath)) return 'vbnet';
   return 'other';
 }
 
@@ -197,7 +209,25 @@ export async function scanDeadCode(projectPath, options = {}) {
     ...categorised.kotlin || [],
     ...categorised.csharp || [],
     ...categorised.go || [],
-    ...categorised.rust || []
+    ...categorised.rust || [],
+    ...categorised.php || [],
+    ...categorised.ruby || [],
+    ...categorised.swift || [],
+    ...categorised.dart || [],
+    ...categorised.scala || [],
+    ...categorised.elixir || [],
+    ...categorised.haskell || [],
+    ...categorised.fsharp || [],
+    ...categorised.ocaml || [],
+    ...categorised.julia || [],
+    ...categorised.zig || [],
+    ...categorised.nim || [],
+    ...categorised.erlang || [],
+    ...categorised.crystal || [],
+    ...categorised.vlang || [],
+    ...categorised.perl || [],
+    ...categorised.clojure || [],
+    ...categorised.vbnet || []
   ];
   const otherLangAnalysis = [];
   if (otherLangFiles.length > 0) {

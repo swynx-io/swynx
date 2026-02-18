@@ -31,7 +31,7 @@ print_banner() {
   echo "                                          ....."
   echo "                                         ....."
   echo -e "${NC}"
-  echo "  Continuous codebase intelligence across 34 languages"
+  echo "  Continuous codebase intelligence across 26 languages"
   echo ""
 }
 

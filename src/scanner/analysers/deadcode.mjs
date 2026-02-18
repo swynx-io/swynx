@@ -2209,9 +2209,12 @@ const ENTRY_POINT_PATTERNS = [
   /routes\/web\.php$/, /routes\/api\.php$/,
   /database\/migrations\//, /database\/seeders\//,
   /config\/.*\.php$/, /resources\/views\//,
+  /tests?\/.*\.php$/, /spec\/.*\.php$/,  // PHPUnit / PHPSpec test files
+  /bootstrap\.php$/,  // PHPUnit bootstrap
 
   // === Ruby Entry Points ===
   /config\.ru$/, /Rakefile$/, /Gemfile$/,
+  /\.gemspec$/,
   /\/homebrew\//, /^homebrew\//,
   /config\/initializers\//, /config\/environments\//,
   /db\/post_migrate\//, /db\/migrate\//,
@@ -2224,15 +2227,83 @@ const ENTRY_POINT_PATTERNS = [
 
   // === Elixir Entry Points ===
   /mix\.exs$/, /config\/.*\.exs$/,
+  /test\/.*_test\.exs$/, /test\/.*\.exs?$/,
+  /lib\/.*\.ex$/,  // All lib/ files are compiled into BEAM modules
 
   // === Haskell Entry Points ===
   /\.cabal$/, /stack\.yaml$/, /Setup\.hs$/,
+  /Main\.hs$/, /Spec\.hs$/,
+  /test\/.*Spec\.hs$/,
 
   // === Nim Entry Points ===
   /\.nimble$/,
+  /tests?\/.*\.nim$/,
 
   // === Zig Entry Points ===
-  /build\.zig$/, /\.zig$/,
+  /build\.zig$/,
+  /src\/main\.zig$/, /src\/root\.zig$/,
+
+  // === Dart Entry Points ===
+  /pubspec\.yaml$/,
+  /lib\/main\.dart$/,
+  /test\/.*_test\.dart$/,
+  /bin\/.*\.dart$/,
+
+  // === Swift Entry Points ===
+  /Package\.swift$/,
+  /main\.swift$/, /App\.swift$/,
+  /Tests\/.*Tests?\.swift$/,
+  /Sources?\/.*\.swift$/,  // Sources/ or Source/ (Swift PM convention)
+
+  // === Scala Entry Points ===
+  /build\.sbt$/,
+  /.*App\.scala$/, /.*Main\.scala$/,
+  /.*Spec\.scala$/, /.*Test\.scala$/,
+  /src\/main\/scala\/.*\.scala$/,  // All source files compiled by sbt
+  /src\/test\/.*\.scala$/,
+
+  // === F# Entry Points ===
+  /Program\.fs$/, /.*Tests?\.fs$/,
+  /src\/.*\.fs$/,  // All F# source files compiled by project
+
+  // === OCaml Entry Points ===
+  /dune$/, /dune-project$/,
+  /main\.ml$/, /bin\/.*\.ml$/,
+  /test\/.*\.ml$/,
+
+  // === Julia Entry Points ===
+  /Project\.toml$/,
+  /src\/.*\.jl$/,
+  /test\/runtests\.jl$/,
+
+  // === Erlang Entry Points ===
+  /rebar\.config$/,
+  /src\/.*_app\.erl$/,
+  /test\/.*_SUITE\.erl$/,
+
+  // === Crystal Entry Points ===
+  /shard\.yml$/,
+  /src\/.*\.cr$/,
+  /spec\/.*_spec\.cr$/,
+
+  // === V Entry Points ===
+  /v\.mod$/,
+  /main\.v$/, /src\/main\.v$/,
+
+  // === Perl Entry Points ===
+  /Makefile\.PL$/, /Build\.PL$/, /cpanfile$/,
+  /lib\/.*\.pm$/,
+  /t\/.*\.t$/,
+  /script\/.*\.pl$/,
+
+  // === Clojure Entry Points ===
+  /project\.clj$/, /deps\.edn$/,
+  /src\/.*\.clj$/, /src\/.*\.cljs$/,
+  /test\/.*_test\.clj$/,
+
+  // === VB.NET Entry Points ===
+  /Program\.vb$/, /Module1\.vb$/,
+  /.*Tests?\.vb$/,
 
   // === Build Config Files ===
   /build\.gradle(\.kts)?$/, /settings\.gradle(\.kts)?$/,
@@ -3793,7 +3864,7 @@ function isJavaScript(path) {
  * Check if file is a code file (any supported language)
  */
 function isCodeFile(path) {
-  return /\.([mc]?[jt]s|[jt]sx|py|pyi|java|kt|kts|cs|go|rs)$/.test(path);
+  return /\.([mc]?[jt]s|[jt]sx|py|pyi|java|kt|kts|cs|go|rs|php|rb|swift|dart|scala|sc|ex|exs|hs|lhs|fs|ml|mli|jl|zig|nim|erl|hrl|cr|v|pl|pm|clj|cljs|cljc|vb)$/.test(path);
 }
 
 /**
@@ -4359,6 +4430,171 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
     if (isCSharp && importPath.includes('.') && !importPath.startsWith('.')) {
       const namespacePath = importPath.replace(/\./g, '/');
       return findMatchingFiles(namespacePath, ['.cs']);
+    }
+
+    // Handle PHP namespace imports (App\Models\User -> App/Models/User.php)
+    if (fromFile.endsWith('.php')) {
+      if (importPath.includes('\\')) {
+        const nsPath = importPath.replace(/\\/g, '/');
+        return findMatchingFiles(nsPath, ['.php']);
+      }
+      // Direct file requires (require_once 'path/to/file.php')
+      if (importPath.endsWith('.php')) {
+        const resolved = fromDir ? join(fromDir, importPath) : importPath;
+        const matches = findMatchingFiles(resolved, ['']);
+        if (matches.length > 0) return matches;
+        return findMatchingFiles(importPath, ['']);
+      }
+      return findMatchingFiles(importPath, ['.php']);
+    }
+
+    // Handle Ruby require/require_relative
+    if (fromFile.endsWith('.rb')) {
+      if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        // require_relative — resolve relative to importing file
+        const resolved = fromDir ? join(fromDir, importPath) : importPath;
+        return findMatchingFiles(resolved, ['.rb', '']);
+      }
+      // Bare require — search project-wide
+      return findMatchingFiles(importPath, ['.rb', '']);
+    }
+
+    // Handle Elixir aliases (Dot.Separated.Module -> lib/dot/separated/module.ex)
+    if (fromFile.endsWith('.ex') || fromFile.endsWith('.exs')) {
+      if (importPath.includes('.')) {
+        const modulePath = importPath.replace(/\./g, '/').toLowerCase();
+        return findMatchingFiles(modulePath, ['.ex', '.exs']);
+      }
+      return findMatchingFiles(importPath.toLowerCase(), ['.ex', '.exs']);
+    }
+
+    // Handle Haskell imports (Data.Map -> Data/Map.hs)
+    if (fromFile.endsWith('.hs') || fromFile.endsWith('.lhs')) {
+      const modulePath = importPath.replace(/\./g, '/');
+      return findMatchingFiles(modulePath, ['.hs', '.lhs']);
+    }
+
+    // Handle Scala imports (com.example.Service -> com/example/Service.scala)
+    if (fromFile.endsWith('.scala') || fromFile.endsWith('.sc')) {
+      if (importPath.includes('.')) {
+        const modulePath = importPath.replace(/\./g, '/');
+        let matches = findMatchingFiles(modulePath, ['.scala', '.sc']);
+        // Also try without last component (imported symbol)
+        if (matches.length === 0) {
+          const parts = importPath.split('.');
+          if (parts.length > 1) {
+            const shorterPath = parts.slice(0, -1).join('/');
+            matches = findMatchingFiles(shorterPath, ['.scala', '.sc']);
+          }
+        }
+        return matches;
+      }
+    }
+
+    // Handle Dart imports (package:name/path.dart or relative)
+    if (fromFile.endsWith('.dart')) {
+      // Strip 'package:name/' prefix
+      let dartPath = importPath.replace(/^package:\w+\//, '');
+      if (dartPath.endsWith('.dart')) {
+        const resolved = fromDir ? join(fromDir, dartPath) : dartPath;
+        const matches = findMatchingFiles(resolved, ['']);
+        if (matches.length > 0) return matches;
+        return findMatchingFiles(dartPath, ['']);
+      }
+      return findMatchingFiles(dartPath, ['.dart']);
+    }
+
+    // Handle Swift imports (module name — match directory)
+    if (fromFile.endsWith('.swift')) {
+      return findMatchingFiles(importPath, ['.swift', '/']);
+    }
+
+    // Handle Zig imports (@import("file.zig"))
+    if (fromFile.endsWith('.zig')) {
+      if (importPath.endsWith('.zig')) {
+        const resolved = fromDir ? join(fromDir, importPath) : importPath;
+        const matches = findMatchingFiles(resolved, ['']);
+        if (matches.length > 0) return matches;
+        return findMatchingFiles(importPath, ['']);
+      }
+      return findMatchingFiles(importPath, ['.zig']);
+    }
+
+    // Handle Nim imports (module -> module.nim)
+    if (fromFile.endsWith('.nim')) {
+      const nimPath = importPath.replace(/\//g, '/');
+      return findMatchingFiles(nimPath, ['.nim']);
+    }
+
+    // Handle Crystal requires (require "./file")
+    if (fromFile.endsWith('.cr')) {
+      if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        const resolved = fromDir ? join(fromDir, importPath) : importPath;
+        return findMatchingFiles(resolved, ['.cr', '']);
+      }
+      return findMatchingFiles(importPath, ['.cr']);
+    }
+
+    // Handle Erlang module imports
+    if (fromFile.endsWith('.erl') || fromFile.endsWith('.hrl')) {
+      return findMatchingFiles(importPath, ['.erl', '.hrl']);
+    }
+
+    // Handle Perl use/require (use Module::Name -> Module/Name.pm)
+    if (fromFile.endsWith('.pl') || fromFile.endsWith('.pm')) {
+      if (importPath.includes('::')) {
+        const modulePath = importPath.replace(/::/g, '/');
+        return findMatchingFiles(modulePath, ['.pm']);
+      }
+      return findMatchingFiles(importPath, ['.pm', '.pl']);
+    }
+
+    // Handle Clojure require (some.namespace -> some/namespace.clj)
+    if (fromFile.endsWith('.clj') || fromFile.endsWith('.cljs') || fromFile.endsWith('.cljc')) {
+      const nsPath = importPath.replace(/\./g, '/').replace(/-/g, '_');
+      return findMatchingFiles(nsPath, ['.clj', '.cljs', '.cljc']);
+    }
+
+    // Handle F# open statements (Namespace.Module -> Namespace/Module.fs)
+    if (fromFile.endsWith('.fs')) {
+      if (importPath.includes('.')) {
+        const modulePath = importPath.replace(/\./g, '/');
+        return findMatchingFiles(modulePath, ['.fs']);
+      }
+      return findMatchingFiles(importPath, ['.fs']);
+    }
+
+    // Handle OCaml open (Module_name -> module_name.ml)
+    if (fromFile.endsWith('.ml') || fromFile.endsWith('.mli')) {
+      const modulePath = importPath.charAt(0).toLowerCase() + importPath.slice(1);
+      return findMatchingFiles(modulePath, ['.ml', '.mli']);
+    }
+
+    // Handle Julia using/import (Module.SubModule -> Module/SubModule.jl)
+    if (fromFile.endsWith('.jl')) {
+      if (importPath.includes('.')) {
+        const modulePath = importPath.replace(/\./g, '/');
+        return findMatchingFiles(modulePath, ['.jl']);
+      }
+      return findMatchingFiles(importPath, ['.jl']);
+    }
+
+    // Handle V import (module.name -> module/name.v)
+    if (fromFile.endsWith('.v')) {
+      if (importPath.includes('.')) {
+        const modulePath = importPath.replace(/\./g, '/');
+        return findMatchingFiles(modulePath, ['.v']);
+      }
+      return findMatchingFiles(importPath, ['.v']);
+    }
+
+    // Handle VB.NET imports (Namespace.Module -> Namespace/Module.vb)
+    if (fromFile.endsWith('.vb')) {
+      if (importPath.includes('.')) {
+        const namespacePath = importPath.replace(/\./g, '/');
+        return findMatchingFiles(namespacePath, ['.vb']);
+      }
+      return findMatchingFiles(importPath, ['.vb']);
     }
 
     // Standard JS/TS import resolution
@@ -5269,6 +5505,59 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     } catch { /* ignore */ }
   }
 
+  // Parse composer.json autoload roots for PHP projects
+  // In PHP libraries, all files under PSR-4 autoload directories are entry points
+  const composerAutoloadDirs = new Set();
+  if (projectPath) {
+    try {
+      const composerPath = join(projectPath, 'composer.json');
+      if (existsSync(composerPath)) {
+        const composer = JSON.parse(readFileSync(composerPath, 'utf-8'));
+        // PSR-4 autoload: { "Namespace\\": "src/" }
+        for (const section of ['autoload', 'autoload-dev']) {
+          const psr4 = composer[section]?.['psr-4'];
+          if (psr4) {
+            for (const dir of Object.values(psr4)) {
+              const dirs = Array.isArray(dir) ? dir : [dir];
+              for (const d of dirs) {
+                composerAutoloadDirs.add(d.replace(/\/$/, ''));
+              }
+            }
+          }
+          // PSR-0: { "Namespace_": "src/" }
+          const psr0 = composer[section]?.['psr-0'];
+          if (psr0) {
+            for (const dir of Object.values(psr0)) {
+              const dirs = Array.isArray(dir) ? dir : [dir];
+              for (const d of dirs) {
+                composerAutoloadDirs.add(d.replace(/\/$/, ''));
+              }
+            }
+          }
+          // classmap: ["src/", "lib/"]
+          const classmap = composer[section]?.classmap;
+          if (Array.isArray(classmap)) {
+            for (const d of classmap) {
+              composerAutoloadDirs.add(d.replace(/\/$/, ''));
+            }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Parse Ruby .gemspec lib directory for Ruby gem projects
+  // In Ruby gems, all files under lib/ are entry points (they're requireable by consumers)
+  const rubyGemLibDirs = new Set();
+  if (projectPath) {
+    try {
+      const gemspecFiles = readdirSync(projectPath).filter(f => f.endsWith('.gemspec'));
+      if (gemspecFiles.length > 0) {
+        rubyGemLibDirs.add('lib');
+      }
+    } catch { /* ignore */ }
+  }
+
   // Set up dynamic package.json fields from config
   const dynamicPackageFields = config.dynamicPackageFields || config.deadCode?.dynamicPackageFields ||
     ['nodes', 'plugins', 'credentials', 'extensions', 'adapters', 'connectors'];
@@ -5493,6 +5782,38 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       }
     }
 
+    // PHP: Mark all .php files in composer.json autoload directories as entry points
+    if (filePath.endsWith('.php') && composerAutoloadDirs.size > 0) {
+      for (const autoDir of composerAutoloadDirs) {
+        if (filePath.startsWith(autoDir + '/') || filePath === autoDir) {
+          entryPointFiles.add(filePath);
+          results.entryPoints.push({
+            file: filePath,
+            reason: `In composer.json autoload directory: ${autoDir}/`,
+            isDynamic: false
+          });
+          break;
+        }
+      }
+      if (entryPointFiles.has(filePath)) continue;
+    }
+
+    // Ruby: Mark all .rb files in gem lib/ directory as entry points
+    if (filePath.endsWith('.rb') && rubyGemLibDirs.size > 0) {
+      for (const libDir of rubyGemLibDirs) {
+        if (filePath.startsWith(libDir + '/') || filePath === libDir) {
+          entryPointFiles.add(filePath);
+          results.entryPoints.push({
+            file: filePath,
+            reason: `In Ruby gem library directory: ${libDir}/`,
+            isDynamic: false
+          });
+          break;
+        }
+      }
+      if (entryPointFiles.has(filePath)) continue;
+    }
+
     // Deno workspace: treat mod.ts/main.ts in each workspace member as entry point
     // Also treat all exported files from member deno.json as entry points
     if (denoWorkspaceDirs.size > 0 && /\.[mc]?[jt]sx?$/.test(filePath)) {
@@ -5634,6 +5955,19 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           isDynamic: false
         });
         continue;
+      }
+      // Ruby/PHP test file detection from parser metadata
+      if (file.metadata.isTest) {
+        const ext = filePath.split('.').pop();
+        if (['rb', 'php'].includes(ext)) {
+          entryPointFiles.add(filePath);
+          results.entryPoints.push({
+            file: filePath,
+            reason: `Is ${ext === 'rb' ? 'Ruby' : 'PHP'} test file`,
+            isDynamic: false
+          });
+          continue;
+        }
       }
     }
 

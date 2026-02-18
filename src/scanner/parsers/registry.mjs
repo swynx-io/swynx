@@ -41,8 +41,8 @@ const parserRegistry = {
 
   // .NET
   '.cs': () => import('./csharp.mjs'),
-  // '.fs': () => import('./fsharp.mjs'),  // TODO: Not implemented
-  // '.vb': () => import('./vb.mjs'),      // TODO: Not implemented
+  '.fs': () => import('./fsharp.mjs'),
+  '.vb': () => import('./vbnet.mjs'),
 
   // Python
   '.py': () => import('./python.mjs'),
@@ -52,14 +52,63 @@ const parserRegistry = {
   '.go': () => import('./go.mjs'),
 
   // Rust
-  '.rs': () => import('./rust.mjs')
+  '.rs': () => import('./rust.mjs'),
 
-  // TODO: Future language support
-  // '.rb': () => import('./ruby.mjs'),
-  // '.php': () => import('./php.mjs'),
-  // '.swift': () => import('./swift.mjs'),
-  // '.scala': () => import('./scala.mjs'),
-  // '.sc': () => import('./scala.mjs')
+  // PHP
+  '.php': () => import('./php.mjs'),
+
+  // Ruby
+  '.rb': () => import('./ruby.mjs'),
+
+  // Swift
+  '.swift': () => import('./swift.mjs'),
+
+  // Dart
+  '.dart': () => import('./dart.mjs'),
+
+  // Scala
+  '.scala': () => import('./scala.mjs'),
+  '.sc': () => import('./scala.mjs'),
+
+  // Elixir
+  '.ex': () => import('./elixir.mjs'),
+  '.exs': () => import('./elixir.mjs'),
+
+  // Haskell
+  '.hs': () => import('./haskell.mjs'),
+  '.lhs': () => import('./haskell.mjs'),
+
+  // OCaml
+  '.ml': () => import('./ocaml.mjs'),
+  '.mli': () => import('./ocaml.mjs'),
+
+  // Julia
+  '.jl': () => import('./julia.mjs'),
+
+  // Zig
+  '.zig': () => import('./zig.mjs'),
+
+  // Nim
+  '.nim': () => import('./nim.mjs'),
+
+  // Erlang
+  '.erl': () => import('./erlang.mjs'),
+  '.hrl': () => import('./erlang.mjs'),
+
+  // Crystal
+  '.cr': () => import('./crystal.mjs'),
+
+  // V
+  '.v': () => import('./v.mjs'),
+
+  // Perl
+  '.pl': () => import('./perl.mjs'),
+  '.pm': () => import('./perl.mjs'),
+
+  // Clojure
+  '.clj': () => import('./clojure.mjs'),
+  '.cljs': () => import('./clojure.mjs'),
+  '.cljc': () => import('./clojure.mjs')
 };
 
 // Cache for loaded parsers
@@ -213,7 +262,28 @@ export function getLanguageInfo(extension) {
     '.rs': { name: 'Rust', family: 'rust' },
     '.rb': { name: 'Ruby', family: 'ruby' },
     '.php': { name: 'PHP', family: 'php' },
-    '.swift': { name: 'Swift', family: 'swift' }
+    '.swift': { name: 'Swift', family: 'swift' },
+    '.dart': { name: 'Dart', family: 'dart' },
+    '.ex': { name: 'Elixir', family: 'elixir' },
+    '.exs': { name: 'Elixir', family: 'elixir' },
+    '.hs': { name: 'Haskell', family: 'haskell' },
+    '.lhs': { name: 'Haskell', family: 'haskell' },
+    '.ml': { name: 'OCaml', family: 'ocaml' },
+    '.mli': { name: 'OCaml', family: 'ocaml' },
+    '.jl': { name: 'Julia', family: 'julia' },
+    '.zig': { name: 'Zig', family: 'zig' },
+    '.nim': { name: 'Nim', family: 'nim' },
+    '.erl': { name: 'Erlang', family: 'erlang' },
+    '.hrl': { name: 'Erlang', family: 'erlang' },
+    '.cr': { name: 'Crystal', family: 'crystal' },
+    '.v': { name: 'V', family: 'v' },
+    '.pl': { name: 'Perl', family: 'perl' },
+    '.pm': { name: 'Perl', family: 'perl' },
+    '.clj': { name: 'Clojure', family: 'clojure' },
+    '.cljs': { name: 'Clojure', family: 'clojure' },
+    '.cljc': { name: 'Clojure', family: 'clojure' },
+    '.fs': { name: 'F#', family: 'dotnet' },
+    '.vb': { name: 'VB.NET', family: 'dotnet' }
   };
 
   return languageMap[ext] || { name: 'Unknown', family: 'unknown' };

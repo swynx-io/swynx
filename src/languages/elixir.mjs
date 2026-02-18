@@ -15,75 +15,80 @@ export function parse(filePath, content) {
     const exports = [];
     const modules = [];
 
+    // Strip comments before scanning (prevents false matches in doc strings)
+    // Elixir has # line comments and @doc/@moduledoc heredocs
+    const stripped = content
+      .replace(/@(?:doc|moduledoc|typedoc)\s+~[sS]"""[\s\S]*?"""/g, '')  // sigil heredocs
+      .replace(/@(?:doc|moduledoc|typedoc)\s+"""[\s\S]*?"""/g, '')       // heredoc strings
+      .replace(/#[^\n]*/g, '');                                          // line comments
+
     // Module definition
     const modulePattern = /defmodule\s+([\w.]+)\s+do/g;
     let match;
-    while ((match = modulePattern.exec(content)) !== null) {
-      modules.push({
-        name: match[1],
-        line: content.slice(0, match.index).split('\n').length
-      });
-      exports.push({ name: match[1], type: 'module', line: content.slice(0, match.index).split('\n').length });
+    while ((match = modulePattern.exec(stripped)) !== null) {
+      const line = stripped.slice(0, match.index).split('\n').length;
+      modules.push({ name: match[1], line });
+      exports.push({ name: match[1], type: 'module', line });
     }
 
     // Alias statements
     const aliasPattern = /alias\s+([\w.]+)(?:\s*,\s*as:\s*(\w+))?/g;
-    while ((match = aliasPattern.exec(content)) !== null) {
+    while ((match = aliasPattern.exec(stripped)) !== null) {
       imports.push({
         module: match[1],
         alias: match[2] || null,
         type: 'alias',
-        line: content.slice(0, match.index).split('\n').length
+        line: stripped.slice(0, match.index).split('\n').length
       });
     }
 
     // Import statements
     const importPattern = /import\s+([\w.]+)(?:\s*,\s*only:\s*\[[^\]]+\])?/g;
-    while ((match = importPattern.exec(content)) !== null) {
+    while ((match = importPattern.exec(stripped)) !== null) {
       imports.push({
         module: match[1],
         type: 'import',
-        line: content.slice(0, match.index).split('\n').length
+        line: stripped.slice(0, match.index).split('\n').length
       });
     }
 
     // Use statements (macros)
     const usePattern = /use\s+([\w.]+)(?:\s*,\s*[^\n]+)?/g;
-    while ((match = usePattern.exec(content)) !== null) {
+    while ((match = usePattern.exec(stripped)) !== null) {
       imports.push({
         module: match[1],
         type: 'use',
-        line: content.slice(0, match.index).split('\n').length
+        line: stripped.slice(0, match.index).split('\n').length
       });
     }
 
     // Require statements
     const requirePattern = /require\s+([\w.]+)/g;
-    while ((match = requirePattern.exec(content)) !== null) {
+    while ((match = requirePattern.exec(stripped)) !== null) {
       imports.push({
         module: match[1],
         type: 'require',
-        line: content.slice(0, match.index).split('\n').length
+        line: stripped.slice(0, match.index).split('\n').length
       });
     }
 
     // Public function definitions
     const defPattern = /def\s+(\w+)(?:\(|,)/g;
-    while ((match = defPattern.exec(content)) !== null) {
-      exports.push({ name: match[1], type: 'function', line: content.slice(0, match.index).split('\n').length });
+    while ((match = defPattern.exec(stripped)) !== null) {
+      exports.push({ name: match[1], type: 'function', line: stripped.slice(0, match.index).split('\n').length });
     }
 
     // Defmacro definitions
     const defmacroPattern = /defmacro\s+(\w+)(?:\(|,)/g;
-    while ((match = defmacroPattern.exec(content)) !== null) {
-      exports.push({ name: match[1], type: 'macro', line: content.slice(0, match.index).split('\n').length });
+    while ((match = defmacroPattern.exec(stripped)) !== null) {
+      exports.push({ name: match[1], type: 'macro', line: stripped.slice(0, match.index).split('\n').length });
     }
 
-    // Detect patterns
-    const isGenServer = /use\s+GenServer/.test(content);
-    const isSupervisor = /use\s+Supervisor/.test(content);
-    const isPhoenix = /use\s+.*Web|use\s+Phoenix/.test(content);
-    const isTest = /use\s+ExUnit\.Case|defmodule.*Test\s+do/.test(content);
+    // Detect patterns (use stripped to avoid false positives from comments)
+    const isGenServer = /use\s+GenServer/.test(stripped);
+    const isSupervisor = /use\s+Supervisor/.test(stripped);
+    const isPhoenix = /use\s+.*Web|use\s+Phoenix/.test(stripped);
+    const isTest = /use\s+ExUnit\.Case|defmodule.*Test\s+do/.test(stripped);
 
     return {
       imports,
