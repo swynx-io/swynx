@@ -5377,7 +5377,7 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
     if (!changed) break;
   }
 
-  return { reachable, exportUsageMap };
+  return { reachable, exportUsageMap, goFilesByDir };
 }
 
 /**
@@ -5592,6 +5592,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   const results = {
     fullyDeadFiles: [],
     partiallyDeadFiles: [],
+    deadFunctions: [],
     skippedDynamic: [],  // Files skipped due to dynamic loading patterns
     excludedGenerated: excludedGeneratedFiles,  // Files excluded as generated code
     entryPoints: [],
@@ -5599,6 +5600,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       totalDeadBytes: 0,
       totalDeadExports: 0,
       totalLiveExports: 0,
+      totalDeadFunctions: 0,
+      totalDeadFunctionBytes: 0,
       filesAnalysed: 0,
       filesWithDeadCode: 0,
       dynamicPatternCount: dynamicPatterns.length,
@@ -6174,7 +6177,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // Pass projectPath to resolve path aliases like @/ -> src/
   // Note: Use the full analysis (jsAnalysis) for reachability - we need full import graph
   // Also pass C# file references (class instantiation, extension methods) for .NET projects
-  const { reachable: reachableFiles, exportUsageMap } = buildReachableFiles(entryPointFiles, jsAnalysis, projectPath, csharpFileRefs);
+  const { reachable: reachableFiles, exportUsageMap, goFilesByDir } = buildReachableFiles(entryPointFiles, jsAnalysis, projectPath, csharpFileRefs);
 
   // Use analysisFiles for dead code analysis (excludes generated files)
   const total = analysisFiles.length;
@@ -6273,6 +6276,122 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     results.summary.totalDeadBytes += sizeBytes;
     results.summary.totalDeadExports += exports.length;
     results.summary.filesWithDeadCode++;
+  }
+
+  // ── Go intra-package dead function detection ──────────────────────────────
+  // For each Go package directory, find unexported plain functions that are
+  // never referenced anywhere else in the package.  Methods are excluded
+  // (interface satisfaction is unsolvable without full type analysis).
+
+  // Build a map from file path to its parsed functions (content was freed at A10, but
+  // function metadata is small and still in jsAnalysis objects)
+  const fileFunctions = new Map();
+  for (const file of jsAnalysis) {
+    const filePath = file.file?.relativePath || file.file;
+    if (file.functions && file.functions.length > 0) {
+      fileFunctions.set(filePath, file.functions);
+    }
+  }
+
+  // Generated Go files — functions in these are machine-authored, not actionable dead code
+  const goGeneratedRe = /(?:\.pb\.go$|\.pb\.gw\.go$|\/zz_generated[^/]*\.go$|_generated\.go$|\.gen\.go$|\.generated\.go$|\/mock_[^/]*\.go$|_mock\.go$|\/fake_[^/]*\.go$)/;
+
+  for (const [dir, goFiles] of goFilesByDir) {
+    // Only consider reachable (live) non-test, non-generated files for candidates
+    const reachableGoFiles = goFiles.filter(f => reachableFiles.has(f) && !f.endsWith('_test.go') && !goGeneratedRe.test(f));
+    if (reachableGoFiles.length === 0) continue;
+
+    // All package files (including tests) are valid call sites — a function called
+    // only from _test.go is NOT dead.  Include every .go file in the directory.
+    const allPkgFiles = goFiles;
+    if (allPkgFiles.length === 0) continue;
+
+    // Collect candidate unexported functions from reachable non-test files
+    const candidates = [];  // { name, file, line, endLine, lineCount }
+    for (const fp of reachableGoFiles) {
+      const funcs = fileFunctions.get(fp);
+      if (!funcs) continue;
+      for (const fn of funcs) {
+        // Skip: exported, methods/receivers, init(), main(), underscore, single-char, swagger stubs
+        if (fn.exported) continue;
+        if (fn.receiver || fn.type === 'method') continue;
+        if (fn.name === 'init' || fn.name === 'main' || fn.name === '_') continue;
+        if (fn.name.length <= 1) continue;
+        if (fn.name.startsWith('swagger')) continue;  // swagger doc annotation stubs
+        if (fn.lineCount <= 1) continue;  // assembly stubs: Go declarations without bodies (impl in .s files)
+        candidates.push({ name: fn.name, file: fp, line: fn.line, endLine: fn.endLine, lineCount: fn.lineCount });
+      }
+    }
+    if (candidates.length === 0) continue;
+
+    // Read file contents from disk (content was freed at A10)
+    const pkgContents = new Map();       // ALL package files (for reference checking)
+    const generatedFiles = new Set();    // Files with "Code generated" header (skip for candidates)
+    const goCodeGenHeader = /^\/\/\s*Code generated .* DO NOT EDIT/m;
+    for (const fp of allPkgFiles) {
+      try {
+        const src = readFileSync(join(projectPath, fp), 'utf-8');
+        pkgContents.set(fp, src);
+        if (goCodeGenHeader.test(src)) generatedFiles.add(fp);
+      } catch { /* file may have moved */ }
+    }
+    if (pkgContents.size === 0) continue;
+
+    // Drop candidates from generated files (filename pattern OR "Code generated" header)
+    const validCandidates = candidates.filter(c => pkgContents.has(c.file) && !generatedFiles.has(c.file));
+    if (validCandidates.length === 0) continue;
+
+    // Check each candidate
+    for (const cand of validCandidates) {
+      const nameRe = new RegExp(`\\b${cand.name}\\b`);
+      let usedElsewhere = false;
+
+      for (const [fp, content] of pkgContents) {
+        if (fp === cand.file) {
+          // In the declaring file, strip the function body lines and check remaining content
+          const lines = content.split('\n');
+          const startIdx = (cand.line || 1) - 1;
+          const endIdx = (cand.endLine || cand.line || 1) - 1;
+          // Keep only lines OUTSIDE the function body
+          const outside = lines.filter((_, i) => i < startIdx || i > endIdx).join('\n');
+          if (nameRe.test(outside)) {
+            usedElsewhere = true;
+            break;
+          }
+        } else {
+          // In other package files: any word-boundary match means used
+          if (nameRe.test(content)) {
+            usedElsewhere = true;
+            break;
+          }
+        }
+      }
+
+      if (!usedElsewhere) {
+        // Estimate byte size from line count (re-read from declaring file content)
+        let sizeBytes = 0;
+        const declContent = pkgContents.get(cand.file);
+        if (declContent) {
+          const lines = declContent.split('\n');
+          const startIdx = (cand.line || 1) - 1;
+          const endIdx = Math.min((cand.endLine || cand.line || 1) - 1, lines.length - 1);
+          sizeBytes = lines.slice(startIdx, endIdx + 1).join('\n').length;
+        }
+
+        results.deadFunctions.push({
+          name: cand.name,
+          file: cand.file,
+          line: cand.line,
+          endLine: cand.endLine,
+          lineCount: cand.lineCount || 0,
+          sizeBytes,
+          language: 'go',
+          reason: 'unexported-never-called'
+        });
+        results.summary.totalDeadFunctions++;
+        results.summary.totalDeadFunctionBytes += sizeBytes;
+      }
+    }
   }
 
   // Per-export dead export detection for reachable JS/TS/Python files

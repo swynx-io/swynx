@@ -30,7 +30,8 @@ function toReporterShape(scanResult) {
       lines: f.lines,
       language: f.language,
       exports: (f.exports || []).map(e => e.name)
-    }))
+    })),
+    deadFunctions: scanResult.deadFunctions || []
   };
 }
 

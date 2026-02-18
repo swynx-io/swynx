@@ -308,12 +308,14 @@ export async function scanDeadCode(projectPath, options = {}) {
       deadFiles: deadCount,
       deadRate: `${deadRate}%`,
       totalDeadBytes,
+      deadFunctions: (deadCode.deadFunctions || []).length,
       languages
     },
 
     // Full scanner fields (richer detail)
     fullyDeadFiles: deadCode.fullyDeadFiles || [],
     partiallyDeadFiles: deadCode.partiallyDeadFiles || [],
+    deadFunctions: deadCode.deadFunctions || [],
     skippedDynamic: deadCode.skippedDynamic || [],
     excludedGenerated: deadCode.excludedGenerated || [],
 

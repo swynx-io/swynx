@@ -64,10 +64,14 @@ export function report(results, options = {}) {
   lines.push(`  Entry points:        ${entryPoints}`);
   lines.push(`  Reachable files:     ${c.green(String(reachableFiles))}`);
   lines.push(`  Dead files:          ${c.red(`${deadCount} (${deadPct}%)`)}`);
+  const dfCount = (results.deadFunctions || []).length;
+  if (dfCount > 0) {
+    lines.push(`  Dead functions:      ${c.red(String(dfCount))}`);
+  }
   lines.push(`  Dead code size:      ${formatBytes(deadBytes)}`);
   lines.push('');
 
-  if (deadCount === 0) {
+  if (deadCount === 0 && dfCount === 0) {
     lines.push(c.green('No dead code detected. Nice work!'));
     lines.push('');
     return lines.join('\n');
@@ -103,6 +107,22 @@ export function report(results, options = {}) {
       }
     }
   });
+
+  // Dead functions (intra-package unused functions)
+  const deadFunctions = results.deadFunctions || [];
+  if (deadFunctions.length > 0) {
+    lines.push('');
+    lines.push(c.bold('Dead Functions'));
+    lines.push('\u2500'.repeat(14));
+
+    deadFunctions.forEach((fn, i) => {
+      const meta = [];
+      if (fn.lineCount) meta.push(`${fn.lineCount} lines`);
+      if (fn.sizeBytes) meta.push(formatBytes(fn.sizeBytes));
+      const metaStr = meta.length ? ` (${meta.join(', ')})` : '';
+      lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(`${fn.file}:${fn.name}`)} ${c.dim(`line ${fn.line}`)}${c.dim(metaStr)}`);
+    });
+  }
 
   // AI summary
   if (results.aiSummary) {
