@@ -26,6 +26,7 @@ import { scanOutdatedDependencies } from './analysers/outdated.mjs';
 import { analyseLogFiles } from './analysers/logs.mjs';
 import { calculateCosts } from '../calculator/cost.mjs';
 import { calculateHealthScore } from '../calculator/score.mjs';
+import { getSettings } from '../config/store.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -148,6 +149,10 @@ function createProgressBar(percent, width) {
 export async function scanProject(projectPath, config = {}) {
   const startTime = Date.now();
   const onProgress = config.onProgress || defaultProgressReporter;
+
+  // Read feature flags from settings
+  const settings = getSettings();
+  const features = settings.features || {};
 
   let basePercent = 0;
 
@@ -275,71 +280,79 @@ export async function scanProject(projectPath, config = {}) {
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 3: Parse CSS
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error(`[STAGE] Parsing ${categorised.css.length} CSS files...`);
   const cssFiles = categorised.css;
-  let cssAnalysis;
+  let cssAnalysis = [];
 
-  const cssParallel = parallelParse(cssFiles, 'css', (done) => {
-    const prevPhases = SCAN_PHASES.DISCOVERY.weight + SCAN_PHASES.PARSE_JS.weight + SCAN_PHASES.PARSE_OTHER.weight;
-    const phaseProgress = (done / cssFiles.length) * SCAN_PHASES.PARSE_CSS.weight;
-    basePercent = prevPhases + phaseProgress;
-    reportPhase(SCAN_PHASES.PARSE_CSS.name, `${done}/${cssFiles.length} files`, done, cssFiles.length);
-  }, config.workers);
+  if (features.cssAnalysis !== false) {
+    console.error(`[STAGE] Parsing ${cssFiles.length} CSS files...`);
 
-  if (cssParallel) {
-    cssAnalysis = await cssParallel;
-  } else {
-    cssAnalysis = [];
-    for (let i = 0; i < cssFiles.length; i++) {
-      const file = cssFiles[i];
-      const fileName = file.relativePath || file.path || file;
-      reportPhase(SCAN_PHASES.PARSE_CSS.name, fileName, i + 1, cssFiles.length);
+    const cssParallel = parallelParse(cssFiles, 'css', (done) => {
+      const prevPhases = SCAN_PHASES.DISCOVERY.weight + SCAN_PHASES.PARSE_JS.weight + SCAN_PHASES.PARSE_OTHER.weight;
+      const phaseProgress = (done / cssFiles.length) * SCAN_PHASES.PARSE_CSS.weight;
+      basePercent = prevPhases + phaseProgress;
+      reportPhase(SCAN_PHASES.PARSE_CSS.name, `${done}/${cssFiles.length} files`, done, cssFiles.length);
+    }, config.workers);
 
-      const parsed = await parseCSS(file);
-      cssAnalysis.push(parsed);
+    if (cssParallel) {
+      cssAnalysis = await cssParallel;
+    } else {
+      for (let i = 0; i < cssFiles.length; i++) {
+        const file = cssFiles[i];
+        const fileName = file.relativePath || file.path || file;
+        reportPhase(SCAN_PHASES.PARSE_CSS.name, fileName, i + 1, cssFiles.length);
 
-      if (i % 2 === 0) {
-        await new Promise(resolve => setImmediate(resolve));
+        const parsed = await parseCSS(file);
+        cssAnalysis.push(parsed);
+
+        if (i % 2 === 0) {
+          await new Promise(resolve => setImmediate(resolve));
+        }
       }
     }
+    console.error(`[STAGE] CSS parsing complete`);
+  } else {
+    console.error('[STAGE] CSS parsing skipped (feature disabled)');
   }
   advancePhase('PARSE_CSS');
-  console.error(`[STAGE] CSS parsing complete`);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 4: Analyse Assets
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error(`[STAGE] Analysing ${categorised.assets.length} assets...`);
   const assetFiles = categorised.assets;
-  let assetAnalysis;
+  let assetAnalysis = [];
 
-  const assetParallel = parallelParse(assetFiles, 'assets', (done) => {
-    const prevPhases = SCAN_PHASES.DISCOVERY.weight + SCAN_PHASES.PARSE_JS.weight +
-      SCAN_PHASES.PARSE_OTHER.weight + SCAN_PHASES.PARSE_CSS.weight;
-    const phaseProgress = (done / assetFiles.length) * SCAN_PHASES.PARSE_ASSETS.weight;
-    basePercent = prevPhases + phaseProgress;
-    reportPhase(SCAN_PHASES.PARSE_ASSETS.name, `${done}/${assetFiles.length} files`, done, assetFiles.length);
-  }, config.workers);
+  if (features.assets !== false) {
+    console.error(`[STAGE] Analysing ${assetFiles.length} assets...`);
 
-  if (assetParallel) {
-    assetAnalysis = await assetParallel;
-  } else {
-    assetAnalysis = [];
-    for (let i = 0; i < assetFiles.length; i++) {
-      const file = assetFiles[i];
-      const fileName = file.relativePath || file.path || file;
-      reportPhase(SCAN_PHASES.PARSE_ASSETS.name, fileName, i + 1, assetFiles.length);
+    const assetParallel = parallelParse(assetFiles, 'assets', (done) => {
+      const prevPhases = SCAN_PHASES.DISCOVERY.weight + SCAN_PHASES.PARSE_JS.weight +
+        SCAN_PHASES.PARSE_OTHER.weight + SCAN_PHASES.PARSE_CSS.weight;
+      const phaseProgress = (done / assetFiles.length) * SCAN_PHASES.PARSE_ASSETS.weight;
+      basePercent = prevPhases + phaseProgress;
+      reportPhase(SCAN_PHASES.PARSE_ASSETS.name, `${done}/${assetFiles.length} files`, done, assetFiles.length);
+    }, config.workers);
 
-      const parsed = await analyseAssets(file);
-      assetAnalysis.push(parsed);
+    if (assetParallel) {
+      assetAnalysis = await assetParallel;
+    } else {
+      for (let i = 0; i < assetFiles.length; i++) {
+        const file = assetFiles[i];
+        const fileName = file.relativePath || file.path || file;
+        reportPhase(SCAN_PHASES.PARSE_ASSETS.name, fileName, i + 1, assetFiles.length);
 
-      if (i % 2 === 0) {
-        await new Promise(resolve => setImmediate(resolve));
+        const parsed = await analyseAssets(file);
+        assetAnalysis.push(parsed);
+
+        if (i % 2 === 0) {
+          await new Promise(resolve => setImmediate(resolve));
+        }
       }
     }
+    console.error(`[STAGE] Asset parsing complete`);
+  } else {
+    console.error('[STAGE] Asset parsing skipped (feature disabled)');
   }
   advancePhase('PARSE_ASSETS');
-  console.error(`[STAGE] Asset parsing complete`);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 5: Dependency Analysis
@@ -431,15 +444,21 @@ export async function scanProject(projectPath, config = {}) {
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 8: Duplicate Detection
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error('[STAGE] Finding duplicate functions...');
-  reportPhase(SCAN_PHASES.DUPLICATES.name, 'Comparing function bodies for duplicates...');
-  const duplicates = await findDuplicates(jsAnalysis, ({ current, total, file }) => {
-    const fileName = typeof file === 'string' ? file.split('/').pop() : file;
-    reportPhase(SCAN_PHASES.DUPLICATES.name, fileName, current, total);
-  });
+  let duplicates = { duplicateFunctions: [], similarBlocks: [] };
+
+  if (features.duplicates !== false) {
+    console.error('[STAGE] Finding duplicate functions...');
+    reportPhase(SCAN_PHASES.DUPLICATES.name, 'Comparing function bodies for duplicates...');
+    duplicates = await findDuplicates(jsAnalysis, ({ current, total, file }) => {
+      const fileName = typeof file === 'string' ? file.split('/').pop() : file;
+      reportPhase(SCAN_PHASES.DUPLICATES.name, fileName, current, total);
+    });
+    reportPhase(SCAN_PHASES.DUPLICATES.name, `Found ${duplicates.duplicateFunctions.length} duplicate functions`);
+    console.error(`[STAGE] Duplicate detection complete - ${duplicates.duplicateFunctions.length} duplicates`);
+  } else {
+    console.error('[STAGE] Duplicate detection skipped (feature disabled)');
+  }
   advancePhase('DUPLICATES');
-  reportPhase(SCAN_PHASES.DUPLICATES.name, `Found ${duplicates.duplicateFunctions.length} duplicate functions`);
-  console.error(`[STAGE] Duplicate detection complete - ${duplicates.duplicateFunctions.length} duplicates`);
 
   // Find and enrich unused dependencies
   console.error('[STAGE] Analysing unused dependencies...');
@@ -457,40 +476,46 @@ export async function scanProject(projectPath, config = {}) {
   console.error(`[STAGE] Unused dependency analysis complete - ${unusedDeps.length} unused`);
 
   // Asset analysis - report progress to dashboard
-  reportPhase(SCAN_PHASES.DUPLICATES.name, 'Deep asset analysis...');
-  console.error('[STAGE] Starting deep asset analysis...');
-  const assetsFullDepth = await analyseAssetsFullDepth(assetAnalysis, jsAnalysis, cssAnalysis, projectPath, config, (detail, current, total) => {
-    reportPhase(SCAN_PHASES.DUPLICATES.name, detail, current, total);
-  });
+  let assetsFullDepth = { assets: [], summary: {} };
+  let assetOptimisation = { potentialSavings: 0, opportunities: [] };
+  let unusedAssets = [];
 
-  reportPhase(SCAN_PHASES.DUPLICATES.name, 'Checking asset optimisation opportunities...');
-  console.error('[STAGE] Asset optimisation analysis...');
-  const assetOptimisation = analyseAssetOptimisation(assetAnalysis, projectPath);
+  if (features.assets !== false) {
+    reportPhase(SCAN_PHASES.DUPLICATES.name, 'Deep asset analysis...');
+    console.error('[STAGE] Starting deep asset analysis...');
+    assetsFullDepth = await analyseAssetsFullDepth(assetAnalysis, jsAnalysis, cssAnalysis, projectPath, config, (detail, current, total) => {
+      reportPhase(SCAN_PHASES.DUPLICATES.name, detail, current, total);
+    });
 
-  reportPhase(SCAN_PHASES.DUPLICATES.name, 'Finding unused assets...');
-  console.error('[STAGE] Finding unused assets...');
-  const unusedAssetsRaw = findUnusedAssets(assetAnalysis, jsAnalysis, cssAnalysis, projectPath);
+    reportPhase(SCAN_PHASES.DUPLICATES.name, 'Checking asset optimisation opportunities...');
+    console.error('[STAGE] Asset optimisation analysis...');
+    assetOptimisation = analyseAssetOptimisation(assetAnalysis, projectPath);
 
-  reportPhase(SCAN_PHASES.DUPLICATES.name, `Analysing ${unusedAssetsRaw.length} unused assets...`);
-  console.error(`[STAGE] Enriching ${unusedAssetsRaw.length} unused assets...`);
+    reportPhase(SCAN_PHASES.DUPLICATES.name, 'Finding unused assets...');
+    console.error('[STAGE] Finding unused assets...');
+    const unusedAssetsRaw = findUnusedAssets(assetAnalysis, jsAnalysis, cssAnalysis, projectPath);
 
-  // Skip expensive git history for large numbers of unused assets
-  const skipGitHistory = unusedAssetsRaw.length > 50;
-  if (skipGitHistory) {
-    console.error(`[PERF] Skipping git history for ${unusedAssetsRaw.length} unused assets (> 50 limit)`);
-  }
+    reportPhase(SCAN_PHASES.DUPLICATES.name, `Analysing ${unusedAssetsRaw.length} unused assets...`);
+    console.error(`[STAGE] Enriching ${unusedAssetsRaw.length} unused assets...`);
 
-  const unusedAssets = unusedAssetsRaw.map((asset, i) => {
-    if (i % 20 === 0 || i === unusedAssetsRaw.length - 1) {
-      reportPhase(SCAN_PHASES.DUPLICATES.name, `Enriching unused asset ${i + 1}/${unusedAssetsRaw.length}`, i + 1, unusedAssetsRaw.length);
-      console.error(`[STAGE] Enriching unused asset ${i + 1}/${unusedAssetsRaw.length}...`);
+    const skipGitHistory = unusedAssetsRaw.length > 50;
+    if (skipGitHistory) {
+      console.error(`[PERF] Skipping git history for ${unusedAssetsRaw.length} unused assets (> 50 limit)`);
     }
-    // Pass skipGitHistory flag to avoid slow git operations on large codebases
-    return enrichUnusedAsset(asset, skipGitHistory ? null : projectPath, jsAnalysis, cssAnalysis);
-  });
 
-  reportPhase(SCAN_PHASES.DUPLICATES.name, `Found ${unusedAssets.length} unused assets`);
-  console.error('[STAGE] Asset analysis complete');
+    unusedAssets = unusedAssetsRaw.map((asset, i) => {
+      if (i % 20 === 0 || i === unusedAssetsRaw.length - 1) {
+        reportPhase(SCAN_PHASES.DUPLICATES.name, `Enriching unused asset ${i + 1}/${unusedAssetsRaw.length}`, i + 1, unusedAssetsRaw.length);
+        console.error(`[STAGE] Enriching unused asset ${i + 1}/${unusedAssetsRaw.length}...`);
+      }
+      return enrichUnusedAsset(asset, skipGitHistory ? null : projectPath, jsAnalysis, cssAnalysis);
+    });
+
+    reportPhase(SCAN_PHASES.DUPLICATES.name, `Found ${unusedAssets.length} unused assets`);
+    console.error('[STAGE] Asset analysis complete');
+  } else {
+    console.error('[STAGE] Asset analysis skipped (feature disabled)');
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 9: Security Vulnerability Scan
@@ -524,11 +549,17 @@ export async function scanProject(projectPath, config = {}) {
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 10: License Compliance
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error('[STAGE] Checking license compliance...');
-  reportPhase(SCAN_PHASES.LICENSES.name, 'Checking license compliance...');
-  const licenses = await scanLicenses(dependencies, projectPath);
+  let licenses = { byLicense: {}, packages: [], risks: [] };
+
+  if (features.licenses !== false) {
+    console.error('[STAGE] Checking license compliance...');
+    reportPhase(SCAN_PHASES.LICENSES.name, 'Checking license compliance...');
+    licenses = await scanLicenses(dependencies, projectPath);
+    console.error('[STAGE] License check complete');
+  } else {
+    console.error('[STAGE] License check skipped (feature disabled)');
+  }
   advancePhase('LICENSES');
-  console.error('[STAGE] License check complete');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 11: Outdated Dependencies
@@ -548,33 +579,41 @@ export async function scanProject(projectPath, config = {}) {
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 12: Bundle Analysis
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error('[STAGE] Analysing build output...');
-  reportPhase(SCAN_PHASES.BUNDLES.name, 'Analysing build output...');
-  const bundles = await analyseBundles(projectPath, config);
+  let bundles = { totalSize: 0, files: [] };
+
+  if (features.bundles !== false) {
+    console.error('[STAGE] Analysing build output...');
+    reportPhase(SCAN_PHASES.BUNDLES.name, 'Analysing build output...');
+    bundles = await analyseBundles(projectPath, config);
+    console.error('[STAGE] Bundle analysis complete');
+  } else {
+    console.error('[STAGE] Bundle analysis skipped (feature disabled)');
+  }
   advancePhase('BUNDLES');
-  console.error('[STAGE] Bundle analysis complete');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 12.5: Log File Analysis
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error('[STAGE] Analysing log files...');
-  reportPhase('Analysing log files', 'Checking for bloated logs...');
-  const logAnalysis = analyseLogFiles(projectPath);
-  if (logAnalysis.hasIssues) {
-    reportPhase('Analysing log files', `Found ${logAnalysis.summary.totalLogFormatted} of logs`);
+  let logAnalysis = { hasIssues: false, findings: [], summary: {} };
+
+  if (features.buildLogs !== false) {
+    console.error('[STAGE] Analysing log files...');
+    reportPhase('Analysing log files', 'Checking for bloated logs...');
+    logAnalysis = analyseLogFiles(projectPath);
+    if (logAnalysis.hasIssues) {
+      reportPhase('Analysing log files', `Found ${logAnalysis.summary.totalLogFormatted} of logs`);
+    }
+    console.error('[STAGE] Log analysis complete');
+  } else {
+    console.error('[STAGE] Log analysis skipped (feature disabled)');
   }
-  console.error('[STAGE] Log analysis complete');
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PHASE 13: Emissions Calculation
   // ═══════════════════════════════════════════════════════════════════════════
-  console.error('[STAGE] Calculating emissions...');
-  reportPhase(SCAN_PHASES.EMISSIONS.name, 'Calculating carbon footprint...');
 
-  // Calculate sizes
+  // Calculate sizes (always needed for summary)
   const totalSize = getTotalSize(files);
-
-  // Calculate CODE-ONLY size for waste percentage (exclude logs, data files, etc.)
   const codeSize = getTotalSize(categorised.javascript) + getTotalSize(categorised.css);
   const assetSize = getTotalSize(categorised.assets);
   const codeAndAssetSize = codeSize + assetSize;
@@ -589,30 +628,35 @@ export async function scanProject(projectPath, config = {}) {
   const sourceWasteSize = actualWasteSize;
   const totalPotentialSavings = sourceWasteSize + optimisationOpportunities + unusedDepSize;
 
-  // Use code+asset size for waste percentage (not total which includes logs)
   const wasteBaseSize = codeAndAssetSize > 0 ? codeAndAssetSize : totalSize;
   const cappedSourceWaste = Math.min(sourceWasteSize, wasteBaseSize);
 
-  // Emissions calculation
-  // Use code+asset size for waste ratio (same as waste percentage calculation)
-  // This prevents logs/data files from diluting the waste impact
-  const buildOutputSize = bundles.totalSize > 0 ? bundles.totalSize : null;
-  const emissionsBuildSize = buildOutputSize || Math.min(codeAndAssetSize > 0 ? codeAndAssetSize : totalSize, 50 * 1024 * 1024);
-  const emissionsWasteRatio = wasteBaseSize > 0 ? cappedSourceWaste / wasteBaseSize : 0;
-  const emissionsWasteSize = emissionsBuildSize * emissionsWasteRatio;
+  let emissions = { co2: 0, trees: 0, buildInfo: {} };
 
-  const emissions = calculateEmissions({
-    buildSizeBytes: emissionsBuildSize,
-    wasteBytes: emissionsWasteSize,
-    ...config.emissions
-  });
+  if (features.emissions !== false) {
+    console.error('[STAGE] Calculating emissions...');
+    reportPhase(SCAN_PHASES.EMISSIONS.name, 'Calculating carbon footprint...');
 
-  emissions.buildInfo = {
-    hasBuildFolder: bundles.totalSize > 0,
-    buildOutputSize,
-    sourceSize: totalSize,
-    usedForCalculation: emissionsBuildSize
-  };
+    const buildOutputSize = bundles.totalSize > 0 ? bundles.totalSize : null;
+    const emissionsBuildSize = buildOutputSize || Math.min(codeAndAssetSize > 0 ? codeAndAssetSize : totalSize, 50 * 1024 * 1024);
+    const emissionsWasteRatio = wasteBaseSize > 0 ? cappedSourceWaste / wasteBaseSize : 0;
+    const emissionsWasteSize = emissionsBuildSize * emissionsWasteRatio;
+
+    emissions = calculateEmissions({
+      buildSizeBytes: emissionsBuildSize,
+      wasteBytes: emissionsWasteSize,
+      ...config.emissions
+    });
+
+    emissions.buildInfo = {
+      hasBuildFolder: bundles.totalSize > 0,
+      buildOutputSize,
+      sourceSize: totalSize,
+      usedForCalculation: emissionsBuildSize
+    };
+  } else {
+    console.error('[STAGE] Emissions calculation skipped (feature disabled)');
+  }
   advancePhase('EMISSIONS');
 
   // ═══════════════════════════════════════════════════════════════════════════

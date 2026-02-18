@@ -63,7 +63,7 @@ import {
 import { activateLicense } from '../../license/activation.mjs';
 import { loadLicense, saveLicense } from '../../license/storage.mjs';
 import { VERSION, checkForUpdate, getVersionInfo, installUpdate } from '../../cli/commands/update.mjs';
-import { getSettings, saveSettings, getSetting } from '../../config/store.mjs';
+import { getSettings, saveSettings, getSetting, isFeatureEnabled } from '../../config/store.mjs';
 import { calculateEmissions } from '../../emissions/index.mjs';
 import { availableParallelism, totalmem, freemem, platform } from 'os';
 import { execFile, execSync } from 'child_process';
@@ -2030,6 +2030,9 @@ export async function createRoutes() {
 
   // Get full assets analysis summary
   router.get('/drill/assets/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('assets')) {
+      return res.json({ success: true, disabled: true, message: 'Assets feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {
@@ -2130,6 +2133,9 @@ export async function createRoutes() {
 
   // Get specific asset detail
   router.get('/drill/assets/:scanId/:filePath(*)', async (req, res) => {
+    if (!isFeatureEnabled('assets')) {
+      return res.json({ success: true, disabled: true, message: 'Assets feature is disabled. Enable it in Settings.' });
+    }
     try {
       const { scanId, filePath } = req.params;
       const scan = await getScanById(scanId);
@@ -2369,6 +2375,9 @@ export async function createRoutes() {
 
   // Get bundle analysis
   router.get('/drill/bundles/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('bundles')) {
+      return res.json({ success: true, disabled: true, message: 'Bundles feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {
@@ -2429,6 +2438,9 @@ export async function createRoutes() {
 
   // Get CSS analysis
   router.get('/drill/css/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('cssAnalysis')) {
+      return res.json({ success: true, disabled: true, message: 'CSS Analysis feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {
@@ -2502,6 +2514,9 @@ export async function createRoutes() {
 
   // Get duplicate code analysis
   router.get('/drill/duplicates/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('duplicates')) {
+      return res.json({ success: true, disabled: true, message: 'Duplicates feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {
@@ -2586,6 +2601,9 @@ export async function createRoutes() {
 
   // Get full license compliance analysis
   router.get('/drill/licenses/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('licenses')) {
+      return res.json({ success: true, disabled: true, message: 'Licenses feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {
@@ -2717,6 +2735,9 @@ export async function createRoutes() {
 
   // Get dependencies by size
   router.get('/drill/heavy-deps/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('heavyDeps')) {
+      return res.json({ success: true, disabled: true, message: 'Heavy Deps feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {
@@ -2825,6 +2846,9 @@ export async function createRoutes() {
 
   // Get log file analysis
   router.get('/drill/logs/:scanId', async (req, res) => {
+    if (!isFeatureEnabled('buildLogs')) {
+      return res.json({ success: true, disabled: true, message: 'Build Logs feature is disabled. Enable it in Settings.' });
+    }
     try {
       const scan = await getScanById(req.params.scanId);
       if (!scan) {

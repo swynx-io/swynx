@@ -214,6 +214,16 @@ function getDefaultSettings() {
     updates: {
       autoCheck: true,
       channel: 'stable'
+    },
+    features: {
+      emissions: false,
+      bundles: false,
+      cssAnalysis: false,
+      duplicates: false,
+      licenses: false,
+      heavyDeps: false,
+      assets: false,
+      buildLogs: false
     }
   };
 }
@@ -279,6 +289,15 @@ function setSetting(path, value) {
 
   current[parts[parts.length - 1]] = value;
   writeConfig(SETTINGS_FILE, settings);
+}
+
+/**
+ * Check if a toggleable feature is enabled
+ * @param {string} key - Feature key (e.g., 'emissions', 'bundles')
+ * @returns {boolean}
+ */
+function isFeatureEnabled(key) {
+  return getSetting(`features.${key}`, false) === true;
 }
 
 // ============================================
@@ -418,6 +437,7 @@ export {
   getSetting,
   setSetting,
   getDefaultSettings,
+  isFeatureEnabled,
 
   // Update checking
   getLastUpdateCheck,
