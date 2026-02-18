@@ -199,9 +199,11 @@ function removeProjectById(projectId) {
 function getDefaultSettings() {
   return {
     costAssumptions: {
-      bandwidthPerGb: 0.08,
-      monthlyPageLoads: 10000,
       developerHourlyRate: 75,
+      teamSize: 5,
+      newHiresPerYear: 2,
+      onboardingHoursWasted: 8,
+      maintenanceOverheadPercent: 10,
       currency: 'GBP'
     },
     dashboard: {

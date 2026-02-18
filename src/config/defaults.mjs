@@ -6,34 +6,16 @@
  * All costs are transparent and show their sources
  */
 export const DEFAULT_COSTS = {
-  // Traffic assumptions
-  monthlyPageLoads: 10000,
-  cacheHitRate: 0.80,
-
-  // Bandwidth costs with sources
-  bandwidthPerGb: 0.08,
-  bandwidthSource: 'AWS CloudFront pricing (Jan 2026)',
-
-  // Storage costs with sources
-  storagePerGbMonth: 0.023,
-  storageSource: 'AWS S3 Standard pricing (Jan 2026)',
-
   // Developer time costs
   developerHourlyRate: 75,
-  developerSource: 'UK developer average (Glassdoor 2025)',
-
-  // Environmental impact
-  co2PerGb: 0.5,
-  co2Source: 'The Shift Project (2023)',
+  teamSize: 5,
+  newHiresPerYear: 2,
+  onboardingHoursWasted: 8,
+  maintenanceOverheadPercent: 10,
 
   // Currency settings
   currency: 'GBP',
-  currencySymbol: '£',
-
-  // Calculation mode
-  // 'served' = bandwidth + storage costs (for web-served assets)
-  // 'storage' = storage only (for archived/non-served files)
-  mode: 'served'
+  currencySymbol: '£'
 };
 
 /**

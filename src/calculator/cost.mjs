@@ -1,22 +1,18 @@
 // src/calculator/cost.mjs
-// Transparent cost calculations for Swynx
+// Developer-time cost calculations for dead code impact
 
 import { DEFAULT_COSTS, getCurrencySymbol } from '../config/defaults.mjs';
 
 /**
- * Swynx Cost Methodology v1.0
+ * Swynx Cost Methodology v2.0
  *
- * This calculator provides transparent, configurable cost estimates for digital waste.
- * Every calculation shows its formula so users can verify and adjust assumptions.
+ * Calculates the developer-time cost of dead code in a codebase.
+ * Dead code costs teams money through:
+ * - Onboarding: New devs reading/understanding code that doesn't matter
+ * - Maintenance: Time wasted updating, reviewing, and debugging dead paths
+ * - Cleanup: The actual cost to remove the dead code
  *
- * Cost categories:
- * - Bandwidth: Cost of serving data to users
- * - Storage: Cost of storing data in cloud/CDN
- * - Developer time: Opportunity cost of maintaining unnecessary code
- *
- * Modes:
- * - 'served': Full cost (bandwidth + storage) for web-served assets
- * - 'storage': Storage only for archived/non-served files
+ * All calculations show their formulas so users can verify and adjust assumptions.
  */
 
 // ============================================
@@ -24,39 +20,19 @@ import { DEFAULT_COSTS, getCurrencySymbol } from '../config/defaults.mjs';
 // ============================================
 
 const COST_FACTORS = {
-  BANDWIDTH: {
-    description: 'Cost per GB of data transfer',
-    unit: 'currency/GB',
-    defaultValue: 0.08,
-    source: 'AWS CloudFront pricing (Jan 2026)'
-  },
-  STORAGE: {
-    description: 'Cost per GB per month for storage',
-    unit: 'currency/GB/month',
-    defaultValue: 0.023,
-    source: 'AWS S3 Standard pricing (Jan 2026)'
-  },
   DEVELOPER_HOUR: {
-    description: 'Average developer hourly rate',
+    description: 'Average developer hourly rate (salary + benefits + overhead)',
     unit: 'currency/hour',
     defaultValue: 75,
     source: 'UK developer average (Glassdoor 2025)'
   },
-  CO2_PER_GB: {
-    description: 'CO2 emissions per GB transferred',
-    unit: 'kg/GB',
-    defaultValue: 0.5,
-    source: 'The Shift Project (2023)'
-  },
-  // Developer time estimates for fixing waste
-  TIME_TO_REMOVE_DEAD_FILE: 5, // minutes per file
-  TIME_TO_REMOVE_DEAD_EXPORT: 2, // minutes per export
-  TIME_TO_REMOVE_UNUSED_DEP: 10, // minutes per dependency
-  TIME_TO_OPTIMIZE_ASSET: 15 // minutes per asset
+  // Developer time estimates for cleanup work
+  TIME_TO_REMOVE_DEAD_FILE: 5,    // minutes per file
+  TIME_TO_REMOVE_DEAD_EXPORT: 2,  // minutes per export
+  TIME_TO_REMOVE_UNUSED_DEP: 10,  // minutes per dependency
+  TIME_TO_OPTIMIZE_ASSET: 15      // minutes per asset
 };
 
-// Bytes conversion
-const BYTES_TO_GB = 1024 ** 3;
 const BYTES_TO_MB = 1024 ** 2;
 
 /**
@@ -64,6 +40,7 @@ const BYTES_TO_MB = 1024 ** 2;
  */
 function formatBytes(bytes) {
   if (!bytes || isNaN(bytes)) return '0 B';
+  const BYTES_TO_GB = 1024 ** 3;
   if (bytes < 1024) return bytes + ' B';
   if (bytes < BYTES_TO_MB) return (bytes / 1024).toFixed(1) + ' KB';
   if (bytes < BYTES_TO_GB) return (bytes / BYTES_TO_MB).toFixed(2) + ' MB';
@@ -74,69 +51,11 @@ function formatBytes(bytes) {
  * Format currency amount
  */
 function formatCurrency(amount, symbol = '£') {
-  if (amount < 0.01) return `${symbol}0.00`;
+  if (amount < 0.01) return `${symbol}0`;
   if (amount < 1) return `${symbol}${amount.toFixed(2)}`;
-  if (amount < 100) return `${symbol}${amount.toFixed(2)}`;
-  return `${symbol}${amount.toFixed(0)}`;
-}
-
-/**
- * Calculate transfer amounts considering cache
- * Same methodology as emissions calculator
- */
-function calculateTransfer(totalBytes, monthlyPageLoads, cacheHitRate) {
-  const totalGB = totalBytes / BYTES_TO_GB;
-  const freshLoads = monthlyPageLoads * (1 - cacheHitRate);
-  const cachedLoads = monthlyPageLoads * cacheHitRate;
-
-  // Fresh transfer = full page load
-  const freshTransferGB = freshLoads * totalGB;
-  // Cached transfer = ~10% of full load (validation, dynamic content)
-  const cachedTransferGB = cachedLoads * totalGB * 0.1;
-  const monthlyTransferGB = freshTransferGB + cachedTransferGB;
-
-  return {
-    totalGB,
-    freshLoads,
-    cachedLoads,
-    freshTransferGB,
-    cachedTransferGB,
-    monthlyTransferGB
-  };
-}
-
-/**
- * Build formula string for bandwidth calculation
- */
-function buildBandwidthFormula(monthlyPageLoads, cacheHitRate, totalBytes, monthlyTransferGB, bandwidthPerGb, currencySymbol) {
-  const missRate = ((1 - cacheHitRate) * 100).toFixed(0);
-  const totalMB = (totalBytes / BYTES_TO_MB).toFixed(2);
-
-  return {
-    formula: `${monthlyPageLoads.toLocaleString()} loads × ${missRate}% miss rate × ${totalMB} MB = ${monthlyTransferGB.toFixed(4)} GB × ${currencySymbol}${bandwidthPerGb}/GB`,
-    breakdown: [
-      `Monthly page loads: ${monthlyPageLoads.toLocaleString()}`,
-      `Cache miss rate: ${missRate}% (${(1 - cacheHitRate).toFixed(2)})`,
-      `Asset size: ${formatBytes(totalBytes)}`,
-      `Effective monthly transfer: ${monthlyTransferGB.toFixed(4)} GB`,
-      `Bandwidth cost: ${currencySymbol}${bandwidthPerGb}/GB`
-    ]
-  };
-}
-
-/**
- * Build formula string for storage calculation
- */
-function buildStorageFormula(totalBytes, storagePerGbMonth, currencySymbol) {
-  const totalGB = totalBytes / BYTES_TO_GB;
-
-  return {
-    formula: `${formatBytes(totalBytes)} × ${currencySymbol}${storagePerGbMonth}/GB/month`,
-    breakdown: [
-      `Total size: ${formatBytes(totalBytes)} (${totalGB.toFixed(6)} GB)`,
-      `Storage cost: ${currencySymbol}${storagePerGbMonth}/GB/month`
-    ]
-  };
+  if (amount < 100) return `${symbol}${amount.toFixed(0)}`;
+  if (amount < 10000) return `${symbol}${amount.toLocaleString('en', { maximumFractionDigits: 0 })}`;
+  return `${symbol}${(amount / 1000).toFixed(1)}k`;
 }
 
 /**
@@ -151,134 +70,112 @@ export function calculateCosts(scanResult, config = {}) {
 
   // Extract configuration with defaults
   const {
-    monthlyPageLoads = DEFAULT_COSTS.monthlyPageLoads,
-    cacheHitRate = DEFAULT_COSTS.cacheHitRate,
-    bandwidthPerGb = DEFAULT_COSTS.bandwidthPerGb,
-    bandwidthSource = DEFAULT_COSTS.bandwidthSource,
-    storagePerGbMonth = DEFAULT_COSTS.storagePerGbMonth,
-    storageSource = DEFAULT_COSTS.storageSource,
     developerHourlyRate = DEFAULT_COSTS.developerHourlyRate,
-    developerSource = DEFAULT_COSTS.developerSource,
-    co2PerGb = DEFAULT_COSTS.co2PerGb,
-    co2Source = DEFAULT_COSTS.co2Source,
+    teamSize = DEFAULT_COSTS.teamSize,
+    newHiresPerYear = DEFAULT_COSTS.newHiresPerYear,
+    onboardingHoursWasted = DEFAULT_COSTS.onboardingHoursWasted,
+    maintenanceOverheadPercent = DEFAULT_COSTS.maintenanceOverheadPercent,
     currency = DEFAULT_COSTS.currency,
-    currencySymbol = getCurrencySymbol(currency),
-    mode = DEFAULT_COSTS.mode
+    currencySymbol = getCurrencySymbol(currency)
   } = costs;
 
   // Extract scan data
   const summary = scanResult.summary || {};
-  const totalBytes = summary.totalSizeBytes || 0;
-  const wasteBytes = summary.wasteSizeBytes || 0;
-  const wastePercent = summary.wastePercent || 0;
-
-  // Calculate transfer amounts
-  const transfer = calculateTransfer(totalBytes, monthlyPageLoads, cacheHitRate);
-  const wasteTransfer = calculateTransfer(wasteBytes, monthlyPageLoads, cacheHitRate);
-
-  // ============================================
-  // BANDWIDTH COSTS (mode: served)
-  // ============================================
-  const bandwidthMonthly = mode === 'served' ? transfer.monthlyTransferGB * bandwidthPerGb : 0;
-  const bandwidthAnnual = bandwidthMonthly * 12;
-  const wasteBandwidthMonthly = mode === 'served' ? wasteTransfer.monthlyTransferGB * bandwidthPerGb : 0;
-  const wasteBandwidthAnnual = wasteBandwidthMonthly * 12;
-
-  // ============================================
-  // STORAGE COSTS
-  // ============================================
-  const totalGB = totalBytes / BYTES_TO_GB;
-  const wasteGB = wasteBytes / BYTES_TO_GB;
-  const storageMonthly = totalGB * storagePerGbMonth;
-  const storageAnnual = storageMonthly * 12;
-  const wasteStorageMonthly = wasteGB * storagePerGbMonth;
-  const wasteStorageAnnual = wasteStorageMonthly * 12;
-
-  // ============================================
-  // TOTAL COSTS
-  // ============================================
-  const totalMonthly = bandwidthMonthly + storageMonthly;
-  const totalAnnual = totalMonthly * 12;
-  const wasteTotalMonthly = wasteBandwidthMonthly + wasteStorageMonthly;
-  const wasteTotalAnnual = wasteTotalMonthly * 12;
-
-  // ============================================
-  // CO2 IMPACT OF WASTE
-  // ============================================
-  const wasteCo2Monthly = wasteTransfer.monthlyTransferGB * co2PerGb;
-  const wasteCo2Annual = wasteCo2Monthly * 12;
-
-  // ============================================
-  // DEVELOPER TIME TO FIX
-  // ============================================
   const details = scanResult.details || {};
   const deadCode = details.deadCode || {};
   const unusedDeps = details.unusedDeps || [];
+  const wastePercent = summary.wastePercent || 0;
 
   const fullyDeadFiles = deadCode.fullyDeadFiles?.length || 0;
   const partiallyDeadFiles = deadCode.partiallyDeadFiles?.length || 0;
   const deadExports = deadCode.summary?.totalDeadExports || 0;
   const unusedDepsCount = unusedDeps.length;
+  const totalDeadFiles = fullyDeadFiles + partiallyDeadFiles;
 
-  const timeToFixMinutes =
+  // ============================================
+  // 1. ONBOARDING COST
+  // New devs waste time reading dead code
+  // ============================================
+  const onboardingCostPerHire = onboardingHoursWasted * developerHourlyRate;
+  const onboardingCostAnnual = onboardingCostPerHire * newHiresPerYear;
+
+  // ============================================
+  // 2. MAINTENANCE OVERHEAD
+  // Existing team wastes X% of time on dead code
+  // (reviewing PRs that touch it, debugging dead paths,
+  // updating dead code during refactors, slower CI)
+  // ============================================
+  const annualDevHoursPerPerson = 52 * 40; // ~2080 hrs/year
+  const totalTeamHoursPerYear = teamSize * annualDevHoursPerPerson;
+  // Scale overhead by actual waste percentage (if codebase is 5% dead, overhead is half of 10% setting)
+  const effectiveOverheadPercent = (maintenanceOverheadPercent / 100) * Math.min(wastePercent / 10, 1);
+  const maintenanceHoursWasted = totalTeamHoursPerYear * effectiveOverheadPercent;
+  const maintenanceCostAnnual = maintenanceHoursWasted * developerHourlyRate;
+
+  // ============================================
+  // 3. CLEANUP COST (one-time to fix it)
+  // ============================================
+  const cleanupMinutes =
     (fullyDeadFiles * COST_FACTORS.TIME_TO_REMOVE_DEAD_FILE) +
     (deadExports * COST_FACTORS.TIME_TO_REMOVE_DEAD_EXPORT) +
     (unusedDepsCount * COST_FACTORS.TIME_TO_REMOVE_UNUSED_DEP);
 
-  const timeToFixHours = timeToFixMinutes / 60;
-  const developerCostToFix = timeToFixHours * developerHourlyRate;
+  const cleanupHours = cleanupMinutes / 60;
+  const cleanupCost = cleanupHours * developerHourlyRate;
 
   // ============================================
-  // BUILD FORMULA OBJECTS
+  // TOTALS
+  // ============================================
+  const annualCost = onboardingCostAnnual + maintenanceCostAnnual;
+  const monthlyCost = annualCost / 12;
+
+  // ROI: how many months until cleanup pays for itself
+  const roiMonths = monthlyCost > 0 ? cleanupCost / monthlyCost : null;
+
+  // ============================================
+  // FORMULAS (transparent calculations)
   // ============================================
   const formulas = {
-    bandwidth: mode === 'served' ? {
-      ...buildBandwidthFormula(monthlyPageLoads, cacheHitRate, totalBytes, transfer.monthlyTransferGB, bandwidthPerGb, currencySymbol),
-      result: bandwidthMonthly,
-      resultFormatted: formatCurrency(bandwidthMonthly, currencySymbol)
-    } : null,
-
-    storage: {
-      ...buildStorageFormula(totalBytes, storagePerGbMonth, currencySymbol),
-      result: storageMonthly,
-      resultFormatted: formatCurrency(storageMonthly, currencySymbol)
+    onboarding: {
+      formula: `${newHiresPerYear} new hires × ${onboardingHoursWasted} hrs wasted × ${currencySymbol}${developerHourlyRate}/hr`,
+      breakdown: [
+        `New hires per year: ${newHiresPerYear}`,
+        `Hours each new dev wastes on dead code: ${onboardingHoursWasted}`,
+        `Developer hourly rate: ${currencySymbol}${developerHourlyRate}`,
+        `Cost per hire: ${formatCurrency(onboardingCostPerHire, currencySymbol)}`,
+        `Annual onboarding cost: ${formatCurrency(onboardingCostAnnual, currencySymbol)}`
+      ],
+      result: onboardingCostAnnual,
+      resultFormatted: formatCurrency(onboardingCostAnnual, currencySymbol)
     },
 
-    wasteBandwidth: mode === 'served' && wasteBytes > 0 ? {
-      ...buildBandwidthFormula(monthlyPageLoads, cacheHitRate, wasteBytes, wasteTransfer.monthlyTransferGB, bandwidthPerGb, currencySymbol),
-      result: wasteBandwidthMonthly,
-      resultFormatted: formatCurrency(wasteBandwidthMonthly, currencySymbol)
-    } : null,
+    maintenance: {
+      formula: `${teamSize} devs × ${annualDevHoursPerPerson} hrs/yr × ${(effectiveOverheadPercent * 100).toFixed(1)}% overhead × ${currencySymbol}${developerHourlyRate}/hr`,
+      breakdown: [
+        `Team size: ${teamSize} developers`,
+        `Annual dev hours per person: ${annualDevHoursPerPerson.toLocaleString()}`,
+        `Maintenance overhead: ${maintenanceOverheadPercent}% (scaled to ${(effectiveOverheadPercent * 100).toFixed(1)}% for ${wastePercent.toFixed(1)}% waste)`,
+        `Hours wasted annually: ${maintenanceHoursWasted.toFixed(0)}`,
+        `Annual maintenance cost: ${formatCurrency(maintenanceCostAnnual, currencySymbol)}`
+      ],
+      result: maintenanceCostAnnual,
+      resultFormatted: formatCurrency(maintenanceCostAnnual, currencySymbol)
+    },
 
-    wasteStorage: wasteBytes > 0 ? {
-      ...buildStorageFormula(wasteBytes, storagePerGbMonth, currencySymbol),
-      result: wasteStorageMonthly,
-      resultFormatted: formatCurrency(wasteStorageMonthly, currencySymbol)
-    } : null,
-
-    developerTime: {
+    cleanup: {
       formula: `(${fullyDeadFiles} files × ${COST_FACTORS.TIME_TO_REMOVE_DEAD_FILE}min) + (${deadExports} exports × ${COST_FACTORS.TIME_TO_REMOVE_DEAD_EXPORT}min) + (${unusedDepsCount} deps × ${COST_FACTORS.TIME_TO_REMOVE_UNUSED_DEP}min)`,
       breakdown: [
         `Dead files to remove: ${fullyDeadFiles} × ${COST_FACTORS.TIME_TO_REMOVE_DEAD_FILE} min = ${fullyDeadFiles * COST_FACTORS.TIME_TO_REMOVE_DEAD_FILE} min`,
         `Dead exports to remove: ${deadExports} × ${COST_FACTORS.TIME_TO_REMOVE_DEAD_EXPORT} min = ${deadExports * COST_FACTORS.TIME_TO_REMOVE_DEAD_EXPORT} min`,
         `Unused deps to remove: ${unusedDepsCount} × ${COST_FACTORS.TIME_TO_REMOVE_UNUSED_DEP} min = ${unusedDepsCount * COST_FACTORS.TIME_TO_REMOVE_UNUSED_DEP} min`,
-        `Total: ${timeToFixMinutes} minutes (${timeToFixHours.toFixed(1)} hours)`,
-        `Developer rate: ${currencySymbol}${developerHourlyRate}/hour`
+        `Total: ${cleanupMinutes} minutes (${cleanupHours.toFixed(1)} hours)`,
+        `Developer rate: ${currencySymbol}${developerHourlyRate}/hour`,
+        `One-time cleanup cost: ${formatCurrency(cleanupCost, currencySymbol)}`
       ],
-      result: developerCostToFix,
-      resultFormatted: formatCurrency(developerCostToFix, currencySymbol),
-      timeMinutes: timeToFixMinutes,
-      timeHours: timeToFixHours
-    },
-
-    co2: {
-      formula: `${wasteTransfer.monthlyTransferGB.toFixed(4)} GB × ${co2PerGb} kg/GB`,
-      breakdown: [
-        `Waste transfer: ${wasteTransfer.monthlyTransferGB.toFixed(4)} GB/month`,
-        `CO2 per GB: ${co2PerGb} kg (source: ${co2Source})`
-      ],
-      result: wasteCo2Monthly,
-      resultFormatted: `${wasteCo2Monthly.toFixed(3)} kg`
+      result: cleanupCost,
+      resultFormatted: formatCurrency(cleanupCost, currencySymbol),
+      timeMinutes: cleanupMinutes,
+      timeHours: cleanupHours
     }
   };
 
@@ -288,237 +185,74 @@ export function calculateCosts(scanResult, config = {}) {
   return {
     enabled: true,
     methodology: 'Swynx Cost Methodology',
-    version: '1.0.0',
+    version: '2.0.0',
     currency,
     currencySymbol,
-    mode,
 
     // Input configuration (for display/editing)
     config: {
-      monthlyPageLoads,
-      cacheHitRate,
-      bandwidthPerGb,
-      bandwidthSource,
-      storagePerGbMonth,
-      storageSource,
       developerHourlyRate,
-      developerSource,
-      co2PerGb,
-      co2Source,
-      mode
+      teamSize,
+      newHiresPerYear,
+      onboardingHoursWasted,
+      maintenanceOverheadPercent,
+      currency
     },
 
-    // Current costs (all assets)
-    current: {
-      monthly: {
-        bandwidth: bandwidthMonthly,
-        storage: storageMonthly,
-        total: totalMonthly
-      },
-      annual: {
-        bandwidth: bandwidthAnnual,
-        storage: storageAnnual,
-        total: totalAnnual
-      },
+    // Ongoing annual cost of keeping dead code
+    annualCost: {
+      onboarding: onboardingCostAnnual,
+      maintenance: maintenanceCostAnnual,
+      total: annualCost,
       formatted: {
-        monthly: {
-          bandwidth: formatCurrency(bandwidthMonthly, currencySymbol),
-          storage: formatCurrency(storageMonthly, currencySymbol),
-          total: formatCurrency(totalMonthly, currencySymbol)
-        },
-        annual: {
-          bandwidth: formatCurrency(bandwidthAnnual, currencySymbol),
-          storage: formatCurrency(storageAnnual, currencySymbol),
-          total: formatCurrency(totalAnnual, currencySymbol)
-        }
+        onboarding: formatCurrency(onboardingCostAnnual, currencySymbol),
+        maintenance: formatCurrency(maintenanceCostAnnual, currencySymbol),
+        total: formatCurrency(annualCost, currencySymbol)
       }
     },
 
-    // Waste costs (unnecessary spending)
-    waste: {
-      bytes: wasteBytes,
-      bytesFormatted: formatBytes(wasteBytes),
-      percent: wastePercent,
-      monthly: {
-        bandwidth: wasteBandwidthMonthly,
-        storage: wasteStorageMonthly,
-        total: wasteTotalMonthly
-      },
-      annual: {
-        bandwidth: wasteBandwidthAnnual,
-        storage: wasteStorageAnnual,
-        total: wasteTotalAnnual
-      },
-      formatted: {
-        monthly: {
-          bandwidth: formatCurrency(wasteBandwidthMonthly, currencySymbol),
-          storage: formatCurrency(wasteStorageMonthly, currencySymbol),
-          total: formatCurrency(wasteTotalMonthly, currencySymbol)
-        },
-        annual: {
-          bandwidth: formatCurrency(wasteBandwidthAnnual, currencySymbol),
-          storage: formatCurrency(wasteStorageAnnual, currencySymbol),
-          total: formatCurrency(wasteTotalAnnual, currencySymbol)
-        }
-      },
-      co2: {
-        monthly: wasteCo2Monthly,
-        annual: wasteCo2Annual,
-        monthlyFormatted: `${wasteCo2Monthly.toFixed(3)} kg`,
-        annualFormatted: `${wasteCo2Annual.toFixed(3)} kg`
-      }
+    monthlyCost: {
+      total: monthlyCost,
+      formatted: formatCurrency(monthlyCost, currencySymbol)
     },
 
-    // Potential savings if waste is removed
-    potentialSavings: {
-      monthly: wasteTotalMonthly,
-      annual: wasteTotalAnnual,
-      formatted: {
-        monthly: formatCurrency(wasteTotalMonthly, currencySymbol),
-        annual: formatCurrency(wasteTotalAnnual, currencySymbol)
-      },
-      developerTime: {
-        minutes: timeToFixMinutes,
-        hours: timeToFixHours,
-        cost: developerCostToFix,
-        costFormatted: formatCurrency(developerCostToFix, currencySymbol)
-      },
-      // ROI: time to recoup developer time investment
-      roiMonths: wasteTotalMonthly > 0 ? developerCostToFix / wasteTotalMonthly : null
+    // One-time cost to clean up
+    cleanup: {
+      minutes: cleanupMinutes,
+      hours: cleanupHours,
+      cost: cleanupCost,
+      formatted: formatCurrency(cleanupCost, currencySymbol)
+    },
+
+    // ROI
+    roi: {
+      months: roiMonths,
+      formatted: roiMonths !== null ? `${roiMonths.toFixed(1)} months` : 'N/A'
     },
 
     // Transparent calculation formulas
     formulas,
 
-    // Per-finding cost breakdown
-    perFinding: calculatePerFindingCosts(scanResult, {
-      monthlyPageLoads,
-      cacheHitRate,
-      bandwidthPerGb,
-      storagePerGbMonth,
-      developerHourlyRate,
-      currency,
-      currencySymbol,
-      mode
-    })
+    // Legacy compatibility fields
+    waste: {
+      bytes: summary.wasteSizeBytes || 0,
+      bytesFormatted: formatBytes(summary.wasteSizeBytes || 0),
+      percent: wastePercent
+    },
+    potentialSavings: {
+      annual: annualCost,
+      formatted: {
+        annual: formatCurrency(annualCost, currencySymbol)
+      },
+      developerTime: {
+        minutes: cleanupMinutes,
+        hours: cleanupHours,
+        cost: cleanupCost,
+        costFormatted: formatCurrency(cleanupCost, currencySymbol)
+      },
+      roiMonths
+    }
   };
-}
-
-/**
- * Calculate costs attributed to each finding type
- */
-function calculatePerFindingCosts(scanResult, costConfig) {
-  const {
-    monthlyPageLoads,
-    cacheHitRate,
-    bandwidthPerGb,
-    storagePerGbMonth,
-    developerHourlyRate,
-    currencySymbol,
-    mode
-  } = costConfig;
-
-  const details = scanResult.details || {};
-  const results = {};
-
-  // Dead code costs
-  const deadCode = details.deadCode || {};
-  const deadCodeBytes = deadCode.totalSizeBytes || (
-    (deadCode.fullyDeadFiles || []).reduce((s, f) => s + (f.sizeBytes || 0), 0) +
-    (deadCode.partiallyDeadFiles || []).reduce((s, f) => s + (f.summary?.deadBytes || 0), 0)
-  );
-
-  if (deadCodeBytes > 0) {
-    const transfer = calculateTransfer(deadCodeBytes, monthlyPageLoads, cacheHitRate);
-    const bandwidth = mode === 'served' ? transfer.monthlyTransferGB * bandwidthPerGb : 0;
-    const storage = (deadCodeBytes / BYTES_TO_GB) * storagePerGbMonth;
-
-    results.deadCode = {
-      bytes: deadCodeBytes,
-      bytesFormatted: formatBytes(deadCodeBytes),
-      monthlyBandwidth: bandwidth,
-      monthlyStorage: storage,
-      monthlyTotal: bandwidth + storage,
-      annualTotal: (bandwidth + storage) * 12,
-      formatted: {
-        monthly: formatCurrency(bandwidth + storage, currencySymbol),
-        annual: formatCurrency((bandwidth + storage) * 12, currencySymbol)
-      }
-    };
-  }
-
-  // Unused dependencies costs
-  const unusedDeps = details.unusedDeps || [];
-  const unusedDepBytes = unusedDeps.reduce((s, d) => s + (d.sizeBytes || 0), 0);
-
-  if (unusedDepBytes > 0) {
-    const transfer = calculateTransfer(unusedDepBytes, monthlyPageLoads, cacheHitRate);
-    const bandwidth = mode === 'served' ? transfer.monthlyTransferGB * bandwidthPerGb : 0;
-    const storage = (unusedDepBytes / BYTES_TO_GB) * storagePerGbMonth;
-
-    results.unusedDeps = {
-      count: unusedDeps.length,
-      bytes: unusedDepBytes,
-      bytesFormatted: formatBytes(unusedDepBytes),
-      monthlyBandwidth: bandwidth,
-      monthlyStorage: storage,
-      monthlyTotal: bandwidth + storage,
-      annualTotal: (bandwidth + storage) * 12,
-      formatted: {
-        monthly: formatCurrency(bandwidth + storage, currencySymbol),
-        annual: formatCurrency((bandwidth + storage) * 12, currencySymbol)
-      }
-    };
-  }
-
-  // Unused assets costs
-  const unusedAssets = details.unusedAssets || [];
-  const unusedAssetBytes = unusedAssets.reduce((s, a) => s + (a.sizeBytes || 0), 0);
-
-  if (unusedAssetBytes > 0) {
-    const transfer = calculateTransfer(unusedAssetBytes, monthlyPageLoads, cacheHitRate);
-    const bandwidth = mode === 'served' ? transfer.monthlyTransferGB * bandwidthPerGb : 0;
-    const storage = (unusedAssetBytes / BYTES_TO_GB) * storagePerGbMonth;
-
-    results.unusedAssets = {
-      count: unusedAssets.length,
-      bytes: unusedAssetBytes,
-      bytesFormatted: formatBytes(unusedAssetBytes),
-      monthlyBandwidth: bandwidth,
-      monthlyStorage: storage,
-      monthlyTotal: bandwidth + storage,
-      annualTotal: (bandwidth + storage) * 12,
-      formatted: {
-        monthly: formatCurrency(bandwidth + storage, currencySymbol),
-        annual: formatCurrency((bandwidth + storage) * 12, currencySymbol)
-      }
-    };
-  }
-
-  // Asset optimisation potential
-  const assetOptimisation = details.assetOptimisation || {};
-  const optimisationBytes = assetOptimisation.potentialSavings || 0;
-
-  if (optimisationBytes > 0) {
-    const transfer = calculateTransfer(optimisationBytes, monthlyPageLoads, cacheHitRate);
-    const bandwidth = mode === 'served' ? transfer.monthlyTransferGB * bandwidthPerGb : 0;
-    const storage = (optimisationBytes / BYTES_TO_GB) * storagePerGbMonth;
-
-    results.assetOptimisation = {
-      bytes: optimisationBytes,
-      bytesFormatted: formatBytes(optimisationBytes),
-      monthlyBandwidth: bandwidth,
-      monthlyStorage: storage,
-      monthlyTotal: bandwidth + storage,
-      annualTotal: (bandwidth + storage) * 12,
-      formatted: {
-        monthly: formatCurrency(bandwidth + storage, currencySymbol),
-        annual: formatCurrency((bandwidth + storage) * 12, currencySymbol)
-      }
-    };
-  }
-
-  return results;
 }
 
 /**
@@ -527,19 +261,20 @@ function calculatePerFindingCosts(scanResult, costConfig) {
 export function getCostMethodologyInfo() {
   return {
     name: 'Swynx Cost Methodology',
-    version: '1.0.0',
-    releaseDate: '2026-01-29',
+    version: '2.0.0',
+    releaseDate: '2026-02-18',
     status: 'active',
     principles: [
       'Transparency - All calculations show formulas',
       'Configurability - All assumptions can be changed',
-      'Accuracy - Uses real cloud pricing data',
+      'Developer-focused - Costs measured in developer time, not bandwidth',
       'Conservativeness - Default estimates are conservative'
     ],
     factors: COST_FACTORS,
-    modes: {
-      served: 'Full cost calculation (bandwidth + storage) for web-served assets',
-      storage: 'Storage-only calculation for archived or non-served files'
+    categories: {
+      onboarding: 'Cost of new developers wasting time understanding dead code',
+      maintenance: 'Ongoing cost of team maintaining, reviewing, and debugging dead code',
+      cleanup: 'One-time cost to remove all dead code'
     }
   };
 }
