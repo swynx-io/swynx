@@ -6394,6 +6394,94 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     }
   }
 
+  // ── Java/Kotlin private dead method detection ────────────────────────────
+  // Private methods can ONLY be called within the same file (compiler-enforced).
+  // For each reachable .java/.kt file, find private methods never referenced
+  // elsewhere in the file.
+  const javaKtRegex = /\.(java|kt|kts)$/;
+  // Annotations that make private methods into framework entry points (not dead)
+  const frameworkMethodAnnotations = new Set([
+    'Bean', 'Scheduled', 'EventListener', 'PostConstruct', 'PreDestroy',
+    'Subscribe', 'Handler', 'Listener', 'OnEvent', 'OnMessage', 'OnOpen', 'OnClose',
+    'Benchmark', 'Setup', 'TearDown',  // JMH
+    'Test', 'BeforeEach', 'AfterEach', 'BeforeAll', 'AfterAll', 'ParameterizedTest',  // JUnit
+    'Provides', 'Binds', 'IntoMap', 'IntoSet',  // Dagger
+    'Inject',  // CDI/Guice
+    'JsonCreator', 'JsonSetter', 'JsonGetter', 'JsonProperty',  // Jackson
+    'XmlElement', 'XmlAttribute',  // JAXB
+    'Cacheable', 'CacheEvict', 'CachePut',  // Spring Cache
+    'Transactional', 'Async',  // Spring
+    'Around', 'Before', 'After', 'AfterReturning', 'AfterThrowing',  // AOP
+    'ExceptionHandler', 'InitBinder', 'ModelAttribute',  // Spring MVC
+  ]);
+  // Java serialization magic methods — called by JVM, never appear as normal calls
+  const javaSerializationMethods = new Set([
+    'readObject', 'writeObject', 'readResolve', 'writeReplace', 'readObjectNoData'
+  ]);
+
+  // Test resource/fixture directories — Java files here are test inputs, not production code
+  const javaTestResourceRe = /(?:\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|\/samples\/|\/examples\/)/;
+
+  for (const file of analysisFiles) {
+    const filePath = file.file?.relativePath || file.file;
+    if (!javaKtRegex.test(filePath)) continue;
+    if (!reachableFiles.has(filePath)) continue;
+    if (javaTestResourceRe.test(filePath)) continue;
+
+    const funcs = fileFunctions.get(filePath);
+    if (!funcs || funcs.length === 0) continue;
+
+    // Collect private method candidates
+    const candidates = [];
+    for (const fn of funcs) {
+      if (fn.visibility !== 'private') continue;
+      if (!fn.name || fn.name.length <= 1) continue;
+      // Skip constructors (name matches class name or is <init>)
+      if (fn.name === '<init>') continue;
+      // Skip serialization magic methods
+      if (javaSerializationMethods.has(fn.name)) continue;
+      // Skip methods with framework annotations
+      const annos = fn.annotations || fn.decorators || [];
+      if (annos.some(a => frameworkMethodAnnotations.has(a.name || a))) continue;
+      // Skip lambda-like single-char names
+      if (fn.lineCount <= 1) continue;
+      candidates.push(fn);
+    }
+    if (candidates.length === 0) continue;
+
+    // Re-read file content (freed at A10)
+    let content = null;
+    try { content = readFileSync(join(projectPath, filePath), 'utf-8'); } catch { continue; }
+    if (!content) continue;
+
+    // Skip generated files
+    if (/\/generated\/|\/gen\/|Generated/.test(filePath)) continue;
+    if (/^\s*\/[/*].*(?:generated|auto-generated|DO NOT (?:EDIT|MODIFY))/im.test(content.slice(0, 500))) continue;
+
+    for (const cand of candidates) {
+      const nameRe = new RegExp(`\\b${cand.name}\\b`, 'g');
+      // Count occurrences: if the name appears exactly once (the declaration), it's dead.
+      // This avoids trusting endLine (Java parser's findBlockEnd has known issues with
+      // escaped chars in string literals causing wildly wrong endLine values).
+      const matches = content.match(nameRe);
+      if (!matches || matches.length <= 1) {
+        const sizeBytes = cand.sizeBytes || 0;
+        results.deadFunctions.push({
+          name: cand.name,
+          file: filePath,
+          line: cand.line,
+          endLine: cand.endLine,
+          lineCount: cand.lineCount || 0,
+          sizeBytes,
+          language: filePath.endsWith('.java') ? 'java' : 'kotlin',
+          reason: 'private-never-called'
+        });
+        results.summary.totalDeadFunctions++;
+        results.summary.totalDeadFunctionBytes += sizeBytes;
+      }
+    }
+  }
+
   // Per-export dead export detection for reachable JS/TS/Python files
   const jstspyRegex = /\.([mc]?[jt]s|[jt]sx|py|pyi)$/;
   // Build a quick lookup from jsAnalysis for exports by file path
