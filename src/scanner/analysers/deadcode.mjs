@@ -6419,8 +6419,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     'readObject', 'writeObject', 'readResolve', 'writeReplace', 'readObjectNoData'
   ]);
 
-  // Test resource/fixture directories — Java files here are test inputs, not production code
-  const javaTestResourceRe = /(?:\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|\/samples\/|\/examples\/)/;
+  // Test directories — Java test helpers use reflection heavily (accessing private methods,
+  // parameterized test data suppliers, mock builders) making dead function detection unreliable.
+  const javaTestResourceRe = /(?:\/src\/(?:test|it)\/(?:java|kotlin|scala|groovy)\/|\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|\/samples\/|\/examples\/)/;
 
   for (const file of analysisFiles) {
     const filePath = file.file?.relativePath || file.file;
@@ -6497,31 +6498,60 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     'hookimpl', 'hookspec',
     'register',
     'dispatch', 'singledispatchmethod',
+    'error', 'warning',  // bokeh model validators (dispatched by metaclass)
   ]);
 
-  // Detect Python dynamic dispatch prefixes project-wide:
-  // getattr(self, f"_prefix_{...}"), __dict__.get(f"_prefix_{...}"), etc.
+  // Detect Python dynamic dispatch prefixes AND suffixes project-wide.
+  // Covers: f-strings, string concat, percent format, .format() method.
   const pyDynamicPrefixes = new Set();
+  const pyDynamicSuffixes = new Set();
+  let pyUsesTraitlets = false;
   for (const file of analysisFiles) {
     const fp = file.file?.relativePath || file.file;
     if (!pyRegex.test(fp)) continue;
-    const content = file.content || '';
-    if (!content) {
-      try {
-        const c = readFileSync(join(projectPath, fp), 'utf-8');
-        // getattr(obj, f"_prefix_{...}") or __dict__.get(f"_prefix_{...}")
-        const getattrRe = /(?:getattr|__dict__\s*\.get)\s*\(\s*[^,]*,\s*f?["']_(\w+?)_?\{/g;
-        let gm;
-        while ((gm = getattrRe.exec(c)) !== null) {
-          pyDynamicPrefixes.add('_' + gm[1]);
-        }
-        // Also: handler_name = f"on_{name}" → methods are _on_* (with _ prefix)
-        const handlerRe = /handler_name\s*=\s*f["'](\w+?)_?\{/g;
-        while ((gm = handlerRe.exec(c)) !== null) {
-          pyDynamicPrefixes.add('_' + gm[1]);
-        }
-      } catch { /* skip */ }
-    }
+    try {
+      const c = readFileSync(join(projectPath, fp), 'utf-8');
+      // F-string: getattr(obj, f"_prefix_{...}") or __dict__.get(f"_prefix_{...}")
+      const getattrRe = /(?:getattr|__dict__\s*\.get)\s*\(\s*[^,]*,\s*f?["']_(\w+?)_?\{/g;
+      let gm;
+      while ((gm = getattrRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add('_' + gm[1]);
+      }
+      // handler_name = f"on_{name}" → methods are _on_* (with _ prefix)
+      const handlerRe = /\w+_?name\s*=\s*f["']_?(\w+?)_?\{/g;
+      while ((gm = handlerRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add('_' + gm[1]);
+      }
+      // String concatenation: getattr(self, "_prefix_" + name)
+      const concatRe = /getattr\s*\([^,]*,\s*["']_(\w+?)_?["']\s*\+/g;
+      while ((gm = concatRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add('_' + gm[1]);
+      }
+      // Percent format: "_prefix_%s" % name (with or without getattr)
+      const percentRe = /["']_(\w+?)_?%s["']\s*%/g;
+      while ((gm = percentRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add('_' + gm[1]);
+      }
+      // .format() method: "_prefix_{}".format(name)
+      const formatRe = /["']_(\w+?)_?\{[^}]*\}["']\.format/g;
+      while ((gm = formatRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add('_' + gm[1]);
+      }
+      // Suffix patterns: '_%s_suffix' % name (e.g., traitlets _*_changed, _*_default)
+      const suffixPctRe = /["']_?%s_(\w+?)["']\s*%/g;
+      while ((gm = suffixPctRe.exec(c)) !== null) {
+        pyDynamicSuffixes.add('_' + gm[1]);
+      }
+      // Suffix f-string: f"_{name}_suffix"
+      const suffixFRe = /f["']_?\{[^}]+\}_(\w+?)["']/g;
+      while ((gm = suffixFRe.exec(c)) !== null) {
+        pyDynamicSuffixes.add('_' + gm[1]);
+      }
+      // Detect traitlets usage (dispatches _*_changed, _*_default, _validate_*)
+      if (/\bfrom\s+traitlets\b|\bimport\s+traitlets\b|\bHasTraits\b/.test(c)) {
+        pyUsesTraitlets = true;
+      }
+    } catch { /* skip */ }
   }
 
   // Group Python files by directory (package)
@@ -6563,6 +6593,18 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
             if (fn.name.startsWith(prefix + '_') || fn.name === prefix) { pyDynMatch = true; break; }
           }
           if (pyDynMatch) continue;
+        }
+        // Skip methods matching dynamic dispatch suffixes
+        if (pyDynamicSuffixes.size > 0) {
+          let pySufMatch = false;
+          for (const suffix of pyDynamicSuffixes) {
+            if (fn.name.endsWith(suffix)) { pySufMatch = true; break; }
+          }
+          if (pySufMatch) continue;
+        }
+        // Traitlets framework: _*_changed, _*_default, _validate_* are dispatched by metaclass
+        if (pyUsesTraitlets) {
+          if (fn.name.endsWith('_changed') || fn.name.endsWith('_default') || fn.name.startsWith('_validate_')) continue;
         }
         pyCandidates.push({ ...fn, filePath });
       }
@@ -6629,10 +6671,63 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   }
 
   // ── C# private dead method detection ──────────────────────────────────
-  // Private methods can only be called within the same file.
+  // Private methods can only be called within the same file (or partial class siblings).
   // For each reachable .cs file, find private methods never referenced
-  // elsewhere in the file.
+  // elsewhere in the file, in partial class sibling files, or in template files.
   const csRegex = /\.cs$/;
+  // Scan for Blazor .razor and XAML .xaml template files (not in analysisFiles)
+  // Private methods in .razor.cs/.xaml.cs are called from their template counterparts.
+  const csTemplateContents = new Map();
+  const csTemplateExts = new Set(['.razor', '.xaml']);
+  const csAllContents = new Map();  // For partial class cross-file checking
+  {
+    const csSkipDirs = new Set(['node_modules', '.git', 'bin', 'obj', 'packages', '__pycache__', '.vs', 'TestResults']);
+    const scanCsTemplates = (dir, depth) => {
+      if (depth > 12) return;
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            if (!csSkipDirs.has(entry.name) && !entry.name.startsWith('.')) {
+              scanCsTemplates(join(dir, entry.name), depth + 1);
+            }
+          } else if (entry.isFile()) {
+            const dotIdx = entry.name.lastIndexOf('.');
+            if (dotIdx > 0) {
+              const ext = entry.name.slice(dotIdx);
+              if (csTemplateExts.has(ext)) {
+                const fullPath = join(dir, entry.name);
+                const relPath = fullPath.slice(projectPath.length + 1);
+                try { csTemplateContents.set(relPath, readFileSync(fullPath, 'utf-8')); } catch {}
+              }
+            }
+          }
+        }
+      } catch { /* skip */ }
+    };
+    // Only scan if we have C# files
+    const hasCsFiles = analysisFiles.some(f => csRegex.test(f.file?.relativePath || f.file));
+    if (hasCsFiles) {
+      scanCsTemplates(projectPath, 0);
+      // Pre-read all C# files for partial class checking
+      for (const file of analysisFiles) {
+        const fp = file.file?.relativePath || file.file;
+        if (csRegex.test(fp)) {
+          try { csAllContents.set(fp, readFileSync(join(projectPath, fp), 'utf-8')); } catch {}
+        }
+      }
+    }
+  }
+  // C# keywords that the parser incorrectly matches as method names
+  const csKeywords = new Set([
+    'if', 'else', 'for', 'foreach', 'while', 'do', 'switch', 'case', 'default',
+    'try', 'catch', 'finally', 'throw', 'return', 'break', 'continue', 'goto',
+    'lock', 'using', 'checked', 'unchecked', 'fixed', 'unsafe',
+    'typeof', 'sizeof', 'nameof', 'stackalloc', 'yield', 'await',
+    'new', 'this', 'base', 'null', 'true', 'false', 'var', 'dynamic',
+    'get', 'set', 'add', 'remove', 'value', 'when', 'where',
+    'from', 'select', 'join', 'into', 'let', 'orderby', 'group', 'by',
+    'Main',  // Entry point
+  ]);
   const csFrameworkAttributes = new Set([
     'Test', 'Fact', 'Theory', 'TestMethod', 'TestCase',
     'SetUp', 'TearDown', 'OneTimeSetUp', 'OneTimeTearDown',
@@ -6662,6 +6757,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     const csCandidates = [];
     for (const fn of fns) {
       if (fn.visibility !== 'private') continue;
+      if (csKeywords.has(fn.name)) continue;  // C# keywords misdetected as methods
+      if (fn.name.length <= 1) continue;  // Single-char names
+      if (/^[a-z]/.test(fn.name)) continue;  // C# methods are PascalCase; lowercase = keyword/misparse
       if (fn.name === 'Dispose' || fn.name === 'Finalize') continue;
       if (/_[A-Z]\w+$/.test(fn.name)) continue;  // Event handlers (Button_Click etc.)
       const attrs = fn.attributes || fn.decorators || [];
@@ -6676,10 +6774,64 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       csContent = readFileSync(join(projectPath, filePath), 'utf-8');
     } catch { continue; }
 
+    const csLines = csContent.split('\n');
+
+    // Detect if file contains interface declarations — their methods are implicitly public
+    const csInterfaceRanges = [];
+    for (let ci = 0; ci < csLines.length; ci++) {
+      if (/^\s*(?:public|internal|private|protected)?\s*(?:partial\s+)?interface\s+/.test(csLines[ci])) {
+        // Find end of interface (simple brace counting)
+        let depth = 0;
+        let started = false;
+        for (let j = ci; j < csLines.length; j++) {
+          for (const ch of csLines[j]) {
+            if (ch === '{') { depth++; started = true; }
+            else if (ch === '}') { depth--; }
+          }
+          if (started && depth <= 0) {
+            csInterfaceRanges.push([ci + 1, j + 1]);
+            break;
+          }
+        }
+      }
+    }
+
     for (const cand of csCandidates) {
+      // Skip methods inside interface declarations (implicitly public, not truly private)
+      if (csInterfaceRanges.some(([s, e]) => cand.line >= s && cand.line <= e)) continue;
+
+      // Verify the method actually has 'private' (not 'private protected') in its declaration line
+      const declLine = csLines[cand.line - 1] || '';
+      if (!/\bprivate\b/.test(declLine)) continue;
+      if (/\bprivate\s+protected\b/.test(declLine)) continue;  // Accessible to derived classes
+
       const nameRe = new RegExp(`\\b${cand.name}\\b`, 'g');
       const matches = csContent.match(nameRe);
       if (!matches || matches.length <= 1) {
+        // Check partial class siblings: ClassName.Part.cs can call ClassName.cs methods
+        // Heuristic: files with matching prefix before first '.' in filename are siblings
+        let csFoundElsewhere = false;
+        const fileName = filePath.split('/').pop();
+        const classPrefix = fileName.split('.')[0];  // e.g., "IISHttpContext" from "IISHttpContext.IO.cs"
+        const dirPrefix = filePath.slice(0, filePath.lastIndexOf('/') + 1);
+        for (const [otherPath, otherContent] of csAllContents) {
+          if (otherPath === filePath) continue;
+          // Partial class sibling: same directory, same class name prefix
+          if (otherPath.startsWith(dirPrefix) && otherPath.split('/').pop().startsWith(classPrefix + '.')) {
+            nameRe.lastIndex = 0;
+            if (nameRe.test(otherContent)) { csFoundElsewhere = true; break; }
+          }
+        }
+        if (csFoundElsewhere) continue;
+
+        // Check Blazor .razor and XAML .xaml template files
+        let csFoundInTemplate = false;
+        for (const [, tplContent] of csTemplateContents) {
+          nameRe.lastIndex = 0;
+          if (nameRe.test(tplContent)) { csFoundInTemplate = true; break; }
+        }
+        if (csFoundInTemplate) continue;
+
         const sizeBytes = cand.sizeBytes || 0;
         results.deadFunctions.push({
           name: cand.name,
@@ -6773,10 +6925,43 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // all Ruby files in the project. Pre-read all files once for efficiency.
   const rbRegex = /\.rb$/;
   const rbAllContents = new Map();
+  // Also read ERB/Haml/Slim/TT templates — Ruby private methods can be called from templates
+  // (ViewComponent, Rails helpers, generators, mailers, etc.)
+  // Templates are NOT in analysisFiles (not in EXTENSION_MAP), so we scan the filesystem.
+  const rbTemplateContents = new Map();
+  const rbTemplateExts = new Set(['.erb', '.haml', '.slim', '.tt', '.builder', '.jbuilder', '.rabl']);
+  const rbSkipDirs = new Set(['node_modules', '.git', 'vendor', 'tmp', 'log', '.bundle', '__pycache__', '.next', 'dist', 'build']);
   for (const file of analysisFiles) {
     const fp = file.file?.relativePath || file.file;
-    if (!rbRegex.test(fp)) continue;
-    try { rbAllContents.set(fp, readFileSync(join(projectPath, fp), 'utf-8')); } catch { /* skip */ }
+    if (rbRegex.test(fp)) {
+      try { rbAllContents.set(fp, readFileSync(join(projectPath, fp), 'utf-8')); } catch { /* skip */ }
+    }
+  }
+  // Scan filesystem for template files if this project has Ruby files
+  if (rbAllContents.size > 0) {
+    const scanForTemplates = (dir, depth) => {
+      if (depth > 12) return;
+      try {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          if (entry.isDirectory()) {
+            if (!rbSkipDirs.has(entry.name) && !entry.name.startsWith('.')) {
+              scanForTemplates(join(dir, entry.name), depth + 1);
+            }
+          } else if (entry.isFile()) {
+            const dotIdx = entry.name.lastIndexOf('.');
+            if (dotIdx > 0) {
+              const ext = entry.name.slice(dotIdx);
+              if (rbTemplateExts.has(ext)) {
+                const fullPath = join(dir, entry.name);
+                const relPath = fullPath.slice(projectPath.length + 1);
+                try { rbTemplateContents.set(relPath, readFileSync(fullPath, 'utf-8')); } catch {}
+              }
+            }
+          }
+        }
+      } catch { /* skip unreadable dirs */ }
+    };
+    scanForTemplates(projectPath, 0);
   }
 
   // Detect dynamic dispatch prefixes project-wide: send(:"prefix_#{...}"), send("prefix_#{...}"),
@@ -6879,6 +7064,14 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           if (nameRe.test(otherContent)) { rbFoundElsewhere = true; break; }
         }
         if (rbFoundElsewhere) continue;
+
+        // Check ERB/Haml/Slim/TT templates — ViewComponent, helpers, generators, mailers
+        let rbFoundInTemplate = false;
+        for (const [, tplContent] of rbTemplateContents) {
+          nameRe.lastIndex = 0;
+          if (nameRe.test(tplContent)) { rbFoundInTemplate = true; break; }
+        }
+        if (rbFoundInTemplate) continue;
 
         results.deadFunctions.push({
           name: cand.name,
