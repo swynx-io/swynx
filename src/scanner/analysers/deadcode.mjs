@@ -6333,11 +6333,13 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
         const src = readFileSync(join(projectPath, fp), 'utf-8');
         pkgContents.set(fp, src);
         if (goCodeGenHeader.test(src)) generatedFiles.add(fp);
+        // Files with //go:build ignore are not compiled normally (e.g., ruleguard DSL files)
+        if (/^\/\/go:build\s+ignore\b|^\/\/\s*\+build\s+ignore\b/m.test(src)) generatedFiles.add(fp);
       } catch { /* file may have moved */ }
     }
     if (pkgContents.size === 0) continue;
 
-    // Drop candidates from generated files (filename pattern OR "Code generated" header)
+    // Drop candidates from generated files (filename pattern OR "Code generated" header OR build ignore tag)
     const validCandidates = candidates.filter(c => pkgContents.has(c.file) && !generatedFiles.has(c.file));
     if (validCandidates.length === 0) continue;
 
@@ -6425,7 +6427,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
 
   // Test directories — Java test helpers use reflection heavily (accessing private methods,
   // parameterized test data suppliers, mock builders) making dead function detection unreliable.
-  const javaTestResourceRe = /(?:\/src\/(?:test|it)\/(?:java|kotlin|scala|groovy)\/|\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|\/samples\/|\/examples\/|[Tt]est[Cc]ases?\/)/;
+  const javaTestResourceRe = /(?:\/src\/(?:test|it)\/(?:java|kotlin|scala|groovy)\/|\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|(?:^|\/)samples\/|\/examples\/|[Tt]est[Cc]ases?\/)/;
 
   for (const file of analysisFiles) {
     const filePath = file.file?.relativePath || file.file;
