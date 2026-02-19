@@ -9,7 +9,7 @@ const program = new Command();
 
 program
   .name('swynx')
-  .description('Dead code detection powered by knowledge patterns')
+  .description('CWE-561 dead code security analysis')
   .version('0.1.0');
 
 /**
@@ -43,10 +43,10 @@ function toReporterShape(scanResult) {
 program
   .command('scan')
   .argument('[path]', 'project root to scan', '.')
-  .description('Scan a project for dead code')
+  .description('Scan a project for CWE-561 dead code security weaknesses')
   .option('--format <type>', 'output format (console|json|markdown|sarif)', 'console')
   .option('--output <file>', 'write report to a file instead of stdout')
-  .option('--ci', 'exit with code 1 when dead code is found')
+  .option('--ci', 'exit with code 1 when CWE-561 instances are found')
   .option('--verbose', 'show extra diagnostic output')
   .option('--no-cache', 'ignore cached scan data')
   .option('--qualify', 'run AI qualification on dead files via Ollama')
@@ -136,6 +136,8 @@ program
     }
 
     if (opts.ci && results.deadFiles.length > 0) {
+      const cweCount = results.deadFiles.length + (results.deadFunctions || []).length;
+      console.error(`CWE-561: ${cweCount} instance${cweCount !== 1 ? 's' : ''} found — failing CI gate`);
       process.exit(1);
     }
 
@@ -192,7 +194,7 @@ program
 program
   .command('verify')
   .argument('[path]', 'project root to verify', '.')
-  .description('Re-scan a project and compare with previous results')
+  .description('Re-scan a project and verify CWE-561 status')
   .option('--verbose', 'show extra diagnostic output')
   .action(async (path, opts) => {
     const root = resolve(path);
@@ -220,7 +222,7 @@ program
 program
   .command('qualify')
   .argument('<file>', 'scan output JSON file to re-qualify')
-  .description('Re-qualify saved scan results without re-scanning')
+  .description('Re-qualify saved CWE-561 findings without re-scanning')
   .option('--format <type>', 'output format (console|json|markdown|sarif)', 'console')
   .option('--output <file>', 'write report to a file instead of stdout')
   .option('--model <name>', 'Ollama model to use', 'qwen2.5-coder:3b')

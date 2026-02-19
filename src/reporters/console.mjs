@@ -1,5 +1,6 @@
 /**
  * Console reporter - human-readable coloured output for terminal use.
+ * Frames all output as CWE-561 security findings.
  */
 
 const ANSI = {
@@ -84,40 +85,46 @@ export function report(results, options = {}) {
   const deadCount = deadFiles.length;
   const deadPct = totalFiles > 0 ? ((deadCount / totalFiles) * 100).toFixed(2) : '0.00';
   const deadBytes = deadFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-
-  const lines = [];
-
-  // Header
-  lines.push('');
-  lines.push(c.bold('Swynx Dead Code Report'));
-  lines.push('\u2550'.repeat(23));
-  lines.push('');
-
-  // Summary
   const dfCount = (results.deadFunctions || []).length;
   const cweCount = deadCount + dfCount;
 
-  lines.push(c.bold('Summary'));
-  lines.push(`  Total files scanned: ${totalFiles}`);
-  lines.push(`  Entry points:        ${entryPoints}`);
-  lines.push(`  Reachable files:     ${c.green(String(reachableFiles))}`);
-  lines.push(`  Dead files:          ${c.red(`${deadCount} (${deadPct}%)`)}`);
-  if (dfCount > 0) {
-    lines.push(`  Dead functions:      ${c.red(String(dfCount))}`);
-  }
-  lines.push(`  Dead code size:      ${formatBytes(deadBytes)}`);
-  lines.push(`  ${c.bold('CWE-561 instances:  ')} ${c.red(String(cweCount))}`);
+  const lines = [];
+
+  // Header — CWE-561 is the headline
+  lines.push('');
+  lines.push(c.bold('Swynx Security Report') + c.dim(' — CWE-561 Dead Code'));
+  lines.push('\u2550'.repeat(42));
   lines.push('');
 
-  if (deadCount === 0 && dfCount === 0) {
-    lines.push(c.green('No dead code detected. Nice work!'));
+  if (cweCount === 0) {
+    lines.push(c.green(`\u2713 No CWE-561 instances found across ${totalFiles} files. Clean.`));
     lines.push('');
     return lines.join('\n');
   }
 
+  // Headline finding
+  lines.push(`  ${c.bold(c.red(`${cweCount} CWE-561 instance${cweCount !== 1 ? 's' : ''}`))} found across ${totalFiles} files`);
+  lines.push('');
+
+  // Breakdown
+  lines.push(c.bold('Breakdown'));
+  lines.push(`  Unreachable files:   ${c.red(`${deadCount} (${deadPct}% of codebase)`)}`);
+  if (dfCount > 0) {
+    lines.push(`  Unreachable functions: ${c.red(String(dfCount))}`);
+  }
+  lines.push(`  Dead code size:      ${formatBytes(deadBytes)}`);
+  lines.push(`  Entry points tested: ${entryPoints}`);
+  lines.push(`  Reachable files:     ${c.green(String(reachableFiles))}`);
+  lines.push('');
+
+  // CWE reference
+  lines.push(c.dim('  CWE-561: "The product contains dead code, which can never be executed."'));
+  lines.push(c.dim('  https://cwe.mitre.org/data/definitions/561.html'));
+  lines.push('');
+
   // Dead files list
-  lines.push(c.bold('CWE-561: Dead Files'));
-  lines.push('\u2500'.repeat(19));
+  lines.push(c.bold('Findings'));
+  lines.push('\u2500'.repeat(8));
 
   deadFiles.forEach((file, i) => {
     const meta = [];
@@ -148,7 +155,7 @@ export function report(results, options = {}) {
       } else {
         const pct = Math.round(ai.confidence * 100);
         const confColor = pct >= 80 ? c.red : pct >= 50 ? c.yellow : c.green;
-        lines.push(`     ${c.dim('AI:')} ${confColor(`${pct}% dead`)} ${c.dim('·')} ${ai.recommendation}`);
+        lines.push(`     ${c.dim('AI:')} ${confColor(`${pct}% dead`)} ${c.dim('\u00b7')} ${ai.recommendation}`);
         if (ai.explanation) {
           lines.push(`     ${c.dim(`"${ai.explanation}"`)}`);
         }
@@ -156,12 +163,12 @@ export function report(results, options = {}) {
     }
   });
 
-  // Dead functions (intra-package unused functions)
+  // Dead functions
   const deadFunctions = results.deadFunctions || [];
   if (deadFunctions.length > 0) {
     lines.push('');
-    lines.push(c.bold('CWE-561: Dead Functions'));
-    lines.push('\u2500'.repeat(22));
+    lines.push(c.bold('Unreachable Functions'));
+    lines.push('\u2500'.repeat(20));
 
     deadFunctions.forEach((fn, i) => {
       const meta = [];

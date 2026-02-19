@@ -1,5 +1,6 @@
 /**
  * Markdown reporter - generates a .md document suitable for PRs, wikis, etc.
+ * Frames all output as CWE-561 security findings.
  */
 
 function formatBytes(bytes) {
@@ -35,13 +36,23 @@ export function report(results, options = {}) {
   const deadCount = deadFiles.length;
   const deadPct = totalFiles > 0 ? ((deadCount / totalFiles) * 100).toFixed(2) : '0.00';
   const deadBytes = deadFiles.reduce((sum, f) => sum + (f.size || 0), 0);
-
-  const lines = [];
-
   const dfCount = (results.deadFunctions || []).length;
   const cweCount = deadCount + dfCount;
 
-  lines.push('# Swynx Dead Code Report');
+  const lines = [];
+
+  // Header — security-first
+  lines.push('# Swynx Security Report — CWE-561');
+  lines.push('');
+
+  if (cweCount === 0 && deadCount === 0) {
+    lines.push(`> **No CWE-561 instances found** across ${totalFiles} files.`);
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  // Headline
+  lines.push(`> **${cweCount} CWE-561 instance${cweCount !== 1 ? 's' : ''}** found across ${totalFiles} files (${deadPct}% of codebase)`);
   lines.push('');
 
   // Summary table
@@ -49,23 +60,21 @@ export function report(results, options = {}) {
   lines.push('');
   lines.push('| Metric | Value |');
   lines.push('| ------ | ----- |');
-  lines.push(`| Total files scanned | ${totalFiles} |`);
-  lines.push(`| Entry points | ${entryPoints} |`);
-  lines.push(`| Reachable files | ${reachableFiles} |`);
-  lines.push(`| Dead files | ${deadCount} (${deadPct}%) |`);
-  lines.push(`| Dead functions | ${dfCount} |`);
-  lines.push(`| Dead code size | ${formatBytes(deadBytes)} |`);
   lines.push(`| **CWE-561 instances** | **${cweCount}** |`);
+  lines.push(`| Unreachable files | ${deadCount} |`);
+  if (dfCount > 0) {
+    lines.push(`| Unreachable functions | ${dfCount} |`);
+  }
+  lines.push(`| Dead code size | ${formatBytes(deadBytes)} |`);
+  lines.push(`| Total files scanned | ${totalFiles} |`);
+  lines.push(`| Entry points tested | ${entryPoints} |`);
+  lines.push(`| Reachable files | ${reachableFiles} |`);
+  lines.push('');
+  lines.push('> [CWE-561](https://cwe.mitre.org/data/definitions/561.html): *"The product contains dead code, which can never be executed."*');
   lines.push('');
 
-  if (deadCount === 0) {
-    lines.push('> No dead code detected.');
-    lines.push('');
-    return lines.join('\n');
-  }
-
-  // Dead files table with verdict column
-  lines.push('## CWE-561: Dead Files');
+  // Findings table
+  lines.push('## Findings');
   lines.push('');
   lines.push('| # | File | Size | CWE | Verdict |');
   lines.push('| - | ---- | ---- | --- | ------- |');
@@ -78,8 +87,8 @@ export function report(results, options = {}) {
 
   lines.push('');
 
-  // Detailed list
-  lines.push('### Details');
+  // Detailed evidence
+  lines.push('### Evidence');
   lines.push('');
 
   deadFiles.forEach((file, i) => {
@@ -94,7 +103,6 @@ export function report(results, options = {}) {
       lines.push(`   - Exports: ${file.exports.map((e) => `\`${e}\``).join(', ')}`);
     }
 
-    // Evidence summary
     if (file.evidence) {
       const ev = file.evidence;
       const evParts = [];
