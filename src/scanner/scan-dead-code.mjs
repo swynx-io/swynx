@@ -282,6 +282,7 @@ export async function scanDeadCode(projectPath, options = {}) {
     language: f.language || detectLanguage(f.file),
     exports: (f.exports || []).map(e => typeof e === 'string' ? { name: e, type: 'unknown' } : e),
     verdict: f.verdict || null,
+    cwe: f.cwe || 'CWE-561',
     evidence: f.evidence || null
   }));
 

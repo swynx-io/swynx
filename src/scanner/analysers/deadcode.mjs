@@ -6269,11 +6269,13 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       lineCount: contentLines.length,
       status: 'fully-dead',
       verdict: hasDynamicRisk ? 'possibly-live' : 'unreachable',
+      cwe: 'CWE-561',
       reason: 'not-reachable-from-entry-points',
       exports: exportsWithSource,
       gitHistory,
       costImpact: cost,
       evidence: {
+        cwe: 'CWE-561',
         entryPoints: {
           total: entryPointCount,
           sources: entryPointSources
@@ -6423,7 +6425,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           language: 'go',
           reason: 'unexported-never-called',
           verdict: 'unreachable',
-          evidence: { scope: 'intra-package', searchedFiles: allPkgFiles.length, method: 'word-boundary-search' }
+          cwe: 'CWE-561',
+          evidence: { cwe: 'CWE-561', scope: 'intra-package', searchedFiles: allPkgFiles.length, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6521,7 +6524,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           language: filePath.endsWith('.java') ? 'java' : 'kotlin',
           reason: 'private-never-called',
           verdict: 'unreachable',
-          evidence: { scope: 'file-private', searchedFiles: 1, method: 'occurrence-count' }
+          cwe: 'CWE-561',
+          evidence: { cwe: 'CWE-561', scope: 'file-private', searchedFiles: 1, method: 'occurrence-count' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6737,7 +6741,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           language: 'python',
           reason: 'private-never-called',
           verdict: 'unreachable',
-          evidence: { scope: 'intra-package', searchedFiles: pyFiles.length, method: 'word-boundary-search' }
+          cwe: 'CWE-561',
+          evidence: { cwe: 'CWE-561', scope: 'intra-package', searchedFiles: pyFiles.length, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6915,7 +6920,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           language: 'csharp',
           reason: 'private-never-called',
           verdict: 'unreachable',
-          evidence: { scope: 'file-private', searchedFiles: 1, method: 'occurrence-count' }
+          cwe: 'CWE-561',
+          evidence: { cwe: 'CWE-561', scope: 'file-private', searchedFiles: 1, method: 'occurrence-count' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6988,7 +6994,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           language: 'php',
           reason: 'private-never-called',
           verdict: 'unreachable',
-          evidence: { scope: 'file-private', searchedFiles: 1, method: 'word-boundary-search' }
+          cwe: 'CWE-561',
+          evidence: { cwe: 'CWE-561', scope: 'file-private', searchedFiles: 1, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
       }
@@ -7159,7 +7166,8 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           language: 'ruby',
           reason: 'private-never-called',
           verdict: 'unreachable',
-          evidence: { scope: 'file-private', searchedFiles: 1, method: 'word-boundary-search' }
+          cwe: 'CWE-561',
+          evidence: { cwe: 'CWE-561', scope: 'file-private', searchedFiles: 1, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
       }
@@ -7276,9 +7284,11 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       lineCount: file.lineCount || file.lines || 0,
       status: 'partially-dead',
       verdict: 'partially-unreachable',
+      cwe: 'CWE-561',
       exports: [...liveExports, ...deadExports],
       deadExports: deadExports.map(e => e.name),
       evidence: {
+        cwe: 'CWE-561',
         entryPoints: {
           total: entryPointCount,
           sources: entryPointSources

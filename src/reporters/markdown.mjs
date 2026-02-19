@@ -38,6 +38,9 @@ export function report(results, options = {}) {
 
   const lines = [];
 
+  const dfCount = (results.deadFunctions || []).length;
+  const cweCount = deadCount + dfCount;
+
   lines.push('# Swynx Dead Code Report');
   lines.push('');
 
@@ -50,7 +53,9 @@ export function report(results, options = {}) {
   lines.push(`| Entry points | ${entryPoints} |`);
   lines.push(`| Reachable files | ${reachableFiles} |`);
   lines.push(`| Dead files | ${deadCount} (${deadPct}%) |`);
+  lines.push(`| Dead functions | ${dfCount} |`);
   lines.push(`| Dead code size | ${formatBytes(deadBytes)} |`);
+  lines.push(`| **CWE-561 instances** | **${cweCount}** |`);
   lines.push('');
 
   if (deadCount === 0) {
@@ -60,15 +65,15 @@ export function report(results, options = {}) {
   }
 
   // Dead files table with verdict column
-  lines.push('## Dead Files');
+  lines.push('## CWE-561: Dead Files');
   lines.push('');
-  lines.push('| # | File | Size | Verdict |');
-  lines.push('| - | ---- | ---- | ------- |');
+  lines.push('| # | File | Size | CWE | Verdict |');
+  lines.push('| - | ---- | ---- | --- | ------- |');
 
   deadFiles.forEach((file, i) => {
     const size = file.size != null ? formatBytes(file.size) : '';
     const verdict = verdictLabel(file);
-    lines.push(`| ${i + 1} | \`${file.path}\` | ${size} | ${verdict} |`);
+    lines.push(`| ${i + 1} | \`${file.path}\` | ${size} | CWE-561 | ${verdict} |`);
   });
 
   lines.push('');

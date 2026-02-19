@@ -31,6 +31,7 @@ function toReporterShape(scanResult) {
       language: f.language,
       exports: (f.exports || []).map(e => e.name),
       verdict: f.verdict || null,
+      cwe: f.cwe || 'CWE-561',
       evidence: f.evidence || null
     })),
     deadFunctions: scanResult.deadFunctions || []

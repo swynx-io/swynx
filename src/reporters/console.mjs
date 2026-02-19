@@ -94,16 +94,19 @@ export function report(results, options = {}) {
   lines.push('');
 
   // Summary
+  const dfCount = (results.deadFunctions || []).length;
+  const cweCount = deadCount + dfCount;
+
   lines.push(c.bold('Summary'));
   lines.push(`  Total files scanned: ${totalFiles}`);
   lines.push(`  Entry points:        ${entryPoints}`);
   lines.push(`  Reachable files:     ${c.green(String(reachableFiles))}`);
   lines.push(`  Dead files:          ${c.red(`${deadCount} (${deadPct}%)`)}`);
-  const dfCount = (results.deadFunctions || []).length;
   if (dfCount > 0) {
     lines.push(`  Dead functions:      ${c.red(String(dfCount))}`);
   }
   lines.push(`  Dead code size:      ${formatBytes(deadBytes)}`);
+  lines.push(`  ${c.bold('CWE-561 instances:  ')} ${c.red(String(cweCount))}`);
   lines.push('');
 
   if (deadCount === 0 && dfCount === 0) {
@@ -113,8 +116,8 @@ export function report(results, options = {}) {
   }
 
   // Dead files list
-  lines.push(c.bold('Dead Files'));
-  lines.push('\u2500'.repeat(10));
+  lines.push(c.bold('CWE-561: Dead Files'));
+  lines.push('\u2500'.repeat(19));
 
   deadFiles.forEach((file, i) => {
     const meta = [];
@@ -157,8 +160,8 @@ export function report(results, options = {}) {
   const deadFunctions = results.deadFunctions || [];
   if (deadFunctions.length > 0) {
     lines.push('');
-    lines.push(c.bold('Dead Functions'));
-    lines.push('\u2500'.repeat(14));
+    lines.push(c.bold('CWE-561: Dead Functions'));
+    lines.push('\u2500'.repeat(22));
 
     deadFunctions.forEach((fn, i) => {
       const meta = [];
