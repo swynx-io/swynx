@@ -6399,20 +6399,24 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // For each reachable .java/.kt file, find private methods never referenced
   // elsewhere in the file.
   const javaKtRegex = /\.(java|kt|kts)$/;
-  // Annotations that make private methods into framework entry points (not dead)
-  const frameworkMethodAnnotations = new Set([
-    'Bean', 'Scheduled', 'EventListener', 'PostConstruct', 'PreDestroy',
-    'Subscribe', 'Handler', 'Listener', 'OnEvent', 'OnMessage', 'OnOpen', 'OnClose',
-    'Benchmark', 'Setup', 'TearDown',  // JMH
-    'Test', 'BeforeEach', 'AfterEach', 'BeforeAll', 'AfterAll', 'ParameterizedTest',  // JUnit
-    'Provides', 'Binds', 'IntoMap', 'IntoSet',  // Dagger
-    'Inject',  // CDI/Guice
-    'JsonCreator', 'JsonSetter', 'JsonGetter', 'JsonProperty',  // Jackson
-    'XmlElement', 'XmlAttribute',  // JAXB
-    'Cacheable', 'CacheEvict', 'CachePut',  // Spring Cache
-    'Transactional', 'Async',  // Spring
-    'Around', 'Before', 'After', 'AfterReturning', 'AfterThrowing',  // AOP
-    'ExceptionHandler', 'InitBinder', 'ModelAttribute',  // Spring MVC
+  // Structural annotations that do NOT indicate dynamic dispatch/registration.
+  // Any method with an annotation NOT in this set is assumed to be invoked
+  // by a framework (e.g., @ScalarOperator, @Substitute, @Subscribe, @Test, etc.)
+  // This is the same inverted logic used for Python decorators.
+  const javaStructuralAnnotations = new Set([
+    // Java language / compiler
+    'Override', 'SuppressWarnings', 'Deprecated', 'SafeVarargs', 'FunctionalInterface',
+    // Nullability / type annotations (various libraries)
+    'Nullable', 'NonNull', 'NotNull', 'Nonnull', 'CheckForNull', 'CheckReturnValue',
+    'CanIgnoreReturnValue', 'Immutable', 'ThreadSafe', 'GuardedBy',
+    // Documentation / visibility
+    'VisibleForTesting', 'Internal', 'Experimental', 'Beta', 'ApiStatus',
+    // Code generation markers (not dispatch)
+    'Generated',
+    // Lombok (structural, not dispatch)
+    'Getter', 'Setter', 'Builder', 'Data', 'Value', 'ToString', 'EqualsAndHashCode',
+    'NoArgsConstructor', 'AllArgsConstructor', 'RequiredArgsConstructor', 'Slf4j', 'Log',
+    'SneakyThrows', 'Synchronized', 'Cleanup',
   ]);
   // Java serialization magic methods — called by JVM, never appear as normal calls
   const javaSerializationMethods = new Set([
@@ -6421,7 +6425,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
 
   // Test directories — Java test helpers use reflection heavily (accessing private methods,
   // parameterized test data suppliers, mock builders) making dead function detection unreliable.
-  const javaTestResourceRe = /(?:\/src\/(?:test|it)\/(?:java|kotlin|scala|groovy)\/|\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|\/samples\/|\/examples\/)/;
+  const javaTestResourceRe = /(?:\/src\/(?:test|it)\/(?:java|kotlin|scala|groovy)\/|\/(?:test|it)\/.*resources[^/]*\/|\/xdocs|\/testdata\/|\/test-data\/|\/fixtures\/|\/samples\/|\/examples\/|[Tt]est[Cc]ases?\/)/;
 
   for (const file of analysisFiles) {
     const filePath = file.file?.relativePath || file.file;
@@ -6441,9 +6445,12 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       if (fn.name === '<init>') continue;
       // Skip serialization magic methods
       if (javaSerializationMethods.has(fn.name)) continue;
-      // Skip methods with framework annotations
+      // Skip methods with non-structural annotations (they're registered by frameworks)
       const annos = fn.annotations || fn.decorators || [];
-      if (annos.some(a => frameworkMethodAnnotations.has(a.name || a))) continue;
+      if (annos.length > 0 && annos.some(a => {
+        const aName = a.name || a;
+        return !javaStructuralAnnotations.has(aName);
+      })) continue;
       // Skip lambda-like single-char names
       if (fn.lineCount <= 1) continue;
       candidates.push(fn);
@@ -6489,16 +6496,20 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // sibling files in the same package (directory).  So we check the entire
   // package directory, similar to Go's approach.
   const pyRegex = /\.py$/;
-  const pyFrameworkDecorators = new Set([
-    'abstractmethod', 'override',
-    'pytest.fixture', 'fixture',
-    'validator', 'field_validator', 'model_validator', 'root_validator',
-    'receiver',
-    'task', 'shared_task',
-    'hookimpl', 'hookspec',
-    'register',
-    'dispatch', 'singledispatchmethod',
-    'error', 'warning',  // bokeh model validators (dispatched by metaclass)
+  // Structural decorators that do NOT indicate dynamic dispatch/registration.
+  // Any method with a decorator NOT in this set is assumed to be registered
+  // by a framework (e.g., @observe, @_dispatch, @handle, @route, @task, etc.)
+  const pyStructuralDecorators = new Set([
+    'staticmethod', 'classmethod', 'property', 'cached_property',
+    'abstractmethod', 'overload', 'override', 'final',
+    'deprecated', 'no_type_check', 'dataclass_transform',
+    'contextmanager', 'asynccontextmanager',
+    'wraps', 'lru_cache', 'cache',
+    // typing module variants
+    'typing.overload', 'typing.final', 'typing.no_type_check', 'typing.dataclass_transform',
+    'functools.wraps', 'functools.lru_cache', 'functools.cache', 'functools.cached_property',
+    'contextlib.contextmanager', 'contextlib.asynccontextmanager',
+    'abc.abstractmethod',
   ]);
 
   // Detect Python dynamic dispatch prefixes AND suffixes project-wide.
@@ -6527,6 +6538,11 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       while ((gm = concatRe.exec(c)) !== null) {
         pyDynamicPrefixes.add('_' + gm[1]);
       }
+      // Broader string concatenation: var = '_prefix_' + other (method name construction)
+      const concatAssignRe = /\w+\s*=\s*["'](_\w+?)_["']\s*\+/g;
+      while ((gm = concatAssignRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add(gm[1]);
+      }
       // Percent format: "_prefix_%s" % name (with or without getattr)
       const percentRe = /["']_(\w+?)_?%s["']\s*%/g;
       while ((gm = percentRe.exec(c)) !== null) {
@@ -6550,6 +6566,17 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       // Detect traitlets usage (dispatches _*_changed, _*_default, _validate_*)
       if (/\bfrom\s+traitlets\b|\bimport\s+traitlets\b|\bHasTraits\b/.test(c)) {
         pyUsesTraitlets = true;
+      }
+      // Detect dispatch_method(self, '_prefix', arg) pattern (SymPy quantum)
+      // dispatch_method constructs method names as '%s_%s' % (basename, classname)
+      const dispatchMethodRe = /dispatch_method\s*\(\s*\w+\s*,\s*['"](_\w+)['"]/g;
+      while ((gm = dispatchMethodRe.exec(c)) !== null) {
+        pyDynamicPrefixes.add(gm[1]);
+      }
+      // Detect SymPy conventions: _print_*, _eval_*, _eval_expand_* methods dispatched by framework
+      if (/\bfrom\s+sympy[\w.]*\s+import\b|\bimport\s+sympy\b|\bprintmethod\s*=/.test(c)) {
+        pyDynamicPrefixes.add('_print');
+        pyDynamicPrefixes.add('_eval');
       }
     } catch { /* skip */ }
   }
@@ -6581,11 +6608,18 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
         if (fn.name === '_') continue;
         // Enum protocol methods (called by metaclass, not directly)
         if (fn.name === '_generate_next_value_' || fn.name === '_missing_' || fn.name === '_ignore_') continue;
-        if (fn.decorators && fn.decorators.some(d => {
-          const baseName = d.name.split('.').pop();
-          return pyFrameworkDecorators.has(d.name) || pyFrameworkDecorators.has(baseName) ||
-                 d.name.endsWith('.setter') || d.name.endsWith('.deleter');
-        })) continue;
+        // Skip methods with non-structural decorators (they're registered by frameworks)
+        if (fn.decorators && fn.decorators.length > 0) {
+          const hasNonStructural = fn.decorators.some(d => {
+            const dName = d.name || '';
+            const baseName = dName.split('.').pop();
+            // Property setter/deleter are structural
+            if (dName.endsWith('.setter') || dName.endsWith('.deleter')) return false;
+            // Check both full name and base name against structural set
+            return !pyStructuralDecorators.has(dName) && !pyStructuralDecorators.has(baseName);
+          });
+          if (hasNonStructural) continue;
+        }
         // Skip methods matching dynamic dispatch prefixes
         if (pyDynamicPrefixes.size > 0) {
           let pyDynMatch = false;
@@ -6728,20 +6762,17 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     'from', 'select', 'join', 'into', 'let', 'orderby', 'group', 'by',
     'Main',  // Entry point
   ]);
-  const csFrameworkAttributes = new Set([
-    'Test', 'Fact', 'Theory', 'TestMethod', 'TestCase',
-    'SetUp', 'TearDown', 'OneTimeSetUp', 'OneTimeTearDown',
-    'TestInitialize', 'TestCleanup', 'ClassInitialize', 'ClassCleanup',
-    'Benchmark', 'GlobalSetup', 'GlobalCleanup', 'IterationSetup', 'IterationCleanup',
-    'HttpGet', 'HttpPost', 'HttpPut', 'HttpDelete', 'HttpPatch',
-    'Subscribe', 'EventHandler',
-    'Inject',
-    'JsonConstructor', 'JsonConverter',
-    'OnDeserialized', 'OnDeserializing', 'OnSerialized', 'OnSerializing',
-    'Command', 'ClientRpc', 'ServerRpc',
-    'Button', 'SerializeField',
-    'MenuItem',
-    'RuntimeInitializeOnLoadMethod',
+  // Structural attributes that do NOT indicate dynamic dispatch.
+  // Any method with an attribute NOT in this set is assumed framework-invoked.
+  const csStructuralAttributes = new Set([
+    'Obsolete', 'Conditional',
+    'SuppressMessage', 'ExcludeFromCodeCoverage',
+    'MethodImpl', 'MethodImplAttribute',
+    'DebuggerStepThrough', 'DebuggerHidden', 'DebuggerNonUserCode',
+    'CompilerGenerated', 'GeneratedCode',
+    'EditorBrowsable',
+    'Pure',
+    'return', 'param',  // attribute targets, not real attributes
   ]);
 
   for (const file of analysisFiles) {
@@ -6763,7 +6794,7 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       if (fn.name === 'Dispose' || fn.name === 'Finalize') continue;
       if (/_[A-Z]\w+$/.test(fn.name)) continue;  // Event handlers (Button_Click etc.)
       const attrs = fn.attributes || fn.decorators || [];
-      if (attrs.some(a => csFrameworkAttributes.has(a.name))) continue;
+      if (attrs.length > 0 && attrs.some(a => !csStructuralAttributes.has(a.name))) continue;
       csCandidates.push(fn);
     }
 
