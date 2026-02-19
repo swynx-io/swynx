@@ -6022,6 +6022,10 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // Update skipped dynamic count
   results.summary.skippedDynamicCount = results.skippedDynamic.length;
 
+  // Compute entry point source summary for evidence trail
+  const entryPointSources = [...new Set(results.entryPoints.map(e => e.reason))];
+  const entryPointCount = results.entryPoints.length;
+
   // Mark workspace package exports subpaths as entry points
   // These are published API surfaces consumed by external packages
   {
@@ -6182,6 +6186,18 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // Use analysisFiles for dead code analysis (excludes generated files)
   const total = analysisFiles.length;
 
+  // Evidence-based confidence scoring for verdicts
+  function computeConfidence(epCount, hasDynRisk, frameworkCount) {
+    let score = 0.95;
+    const factors = [`+not reachable from ${epCount} entry points`];
+    if (hasDynRisk) { score -= 0.2; factors.push('-filename matches dynamic loading pattern'); }
+    if (epCount < 5) { score -= 0.1; factors.push(`-few entry points (${epCount})`); }
+    if (frameworkCount > 3) { factors.push(`+${frameworkCount} frameworks detected (high coverage)`); }
+    score = Math.max(0, Math.min(1, score));
+    score = Math.round(score * 100) / 100;
+    return { score, label: score >= 0.85 ? 'high' : score >= 0.6 ? 'medium' : 'low', factors };
+  }
+
   for (let i = 0; i < analysisFiles.length; i++) {
     const file = analysisFiles[i];
     const filePath = file.file?.relativePath || file.file;
@@ -6230,8 +6246,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     // Determine confidence based on available signals
     const dynamicRiskRe = /\b(plugin|middleware|handler|command|hook|loader|strategy|adapter|migration)s?\b/i;
     const hasDynamicRisk = dynamicRiskRe.test(filePath);
-    const entryPointCount = results.entryPoints.length;
     const fullyDeadConfidence = 'safe-to-remove';
+    const dynamicMatch = filePath.match(dynamicRiskRe);
+    const confidence = computeConfidence(entryPointCount, hasDynamicRisk, DETECTED_FRAMEWORKS.size);
 
     // Extract source lines for each export
     const contentLines = content.split('\n');
@@ -6251,10 +6268,26 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       sizeFormatted: formatBytes(sizeBytes),
       lineCount: contentLines.length,
       status: 'fully-dead',
+      verdict: hasDynamicRisk ? 'possibly-live' : 'unreachable',
       reason: 'not-reachable-from-entry-points',
       exports: exportsWithSource,
       gitHistory,
       costImpact: cost,
+      evidence: {
+        entryPoints: {
+          total: entryPointCount,
+          sources: entryPointSources
+        },
+        reachability: {
+          method: 'bfs-import-graph',
+          result: 'no-path-found'
+        },
+        dynamicCheck: {
+          matchedPattern: dynamicMatch ? dynamicMatch[0] : null,
+          frameworksDetected: [...DETECTED_FRAMEWORKS]
+        },
+        confidence
+      },
       summary: {
         totalExports: exports.length,
         deadExports: exports.length,
@@ -6388,7 +6421,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           lineCount: cand.lineCount || 0,
           sizeBytes,
           language: 'go',
-          reason: 'unexported-never-called'
+          reason: 'unexported-never-called',
+          verdict: 'unreachable',
+          evidence: { scope: 'intra-package', searchedFiles: allPkgFiles.length, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6484,7 +6519,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           lineCount: cand.lineCount || 0,
           sizeBytes,
           language: filePath.endsWith('.java') ? 'java' : 'kotlin',
-          reason: 'private-never-called'
+          reason: 'private-never-called',
+          verdict: 'unreachable',
+          evidence: { scope: 'file-private', searchedFiles: 1, method: 'occurrence-count' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6698,7 +6735,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           lineCount: cand.lineCount || 0,
           sizeBytes,
           language: 'python',
-          reason: 'private-never-called'
+          reason: 'private-never-called',
+          verdict: 'unreachable',
+          evidence: { scope: 'intra-package', searchedFiles: pyFiles.length, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6874,7 +6913,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           lineCount: cand.lineCount || (cand.endLine ? cand.endLine - cand.line + 1 : 0),
           sizeBytes,
           language: 'csharp',
-          reason: 'private-never-called'
+          reason: 'private-never-called',
+          verdict: 'unreachable',
+          evidence: { scope: 'file-private', searchedFiles: 1, method: 'occurrence-count' }
         });
         results.summary.totalDeadFunctions++;
         results.summary.totalDeadFunctionBytes += sizeBytes;
@@ -6945,7 +6986,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           lineCount: 0,
           sizeBytes: 0,
           language: 'php',
-          reason: 'private-never-called'
+          reason: 'private-never-called',
+          verdict: 'unreachable',
+          evidence: { scope: 'file-private', searchedFiles: 1, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
       }
@@ -7114,7 +7157,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
           lineCount: 0,
           sizeBytes: 0,
           language: 'ruby',
-          reason: 'private-never-called'
+          reason: 'private-never-called',
+          verdict: 'unreachable',
+          evidence: { scope: 'file-private', searchedFiles: 1, method: 'word-boundary-search' }
         });
         results.summary.totalDeadFunctions++;
       }
@@ -7216,6 +7261,13 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
     const liveHaveImporters = liveExports.some(e => e.importedBy?.length > 0);
     const partialConfidence = 'safe-to-remove';
 
+    // Partial confidence: higher when we can prove live exports are actually consumed
+    const partialScore = liveHaveImporters ? 0.90 : 0.75;
+    const partialFactors = [];
+    if (liveHaveImporters) partialFactors.push('+live exports have confirmed importers');
+    else partialFactors.push('-live exports have no confirmed importers');
+    partialFactors.push(`+${deadExports.length} dead of ${totalExports} exports`);
+
     results.partiallyDeadFiles.push({
       file: filePath,
       relativePath: filePath,
@@ -7223,8 +7275,29 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       sizeFormatted: formatBytes(sizeBytes),
       lineCount: file.lineCount || file.lines || 0,
       status: 'partially-dead',
+      verdict: 'partially-unreachable',
       exports: [...liveExports, ...deadExports],
       deadExports: deadExports.map(e => e.name),
+      evidence: {
+        entryPoints: {
+          total: entryPointCount,
+          sources: entryPointSources
+        },
+        reachability: {
+          method: 'per-export-import-tracking',
+          result: 'some-exports-unused'
+        },
+        perExport: deadExports.map(e => ({
+          name: e.name,
+          importedBy: e.importedBy || [],
+          status: 'dead'
+        })),
+        confidence: {
+          score: Math.round(partialScore * 100) / 100,
+          label: partialScore >= 0.85 ? 'high' : partialScore >= 0.6 ? 'medium' : 'low',
+          factors: partialFactors
+        }
+      },
       summary: {
         totalExports,
         deadExports: deadExports.length,

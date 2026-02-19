@@ -10,6 +10,15 @@ function formatBytes(bytes) {
   return `${mb.toFixed(1)} MB`;
 }
 
+function verdictLabel(file) {
+  if (!file.verdict) return '';
+  const ev = file.evidence;
+  const pct = ev?.confidence?.score ? `${Math.round(ev.confidence.score * 100)}%` : '';
+  if (file.verdict === 'possibly-live') return `Possibly Live ${pct}`;
+  if (file.verdict === 'partially-unreachable') return `Partial ${pct}`;
+  return `Unreachable ${pct}`;
+}
+
 /**
  * @param {object} results
  * @param {object} [options]
@@ -50,8 +59,22 @@ export function report(results, options = {}) {
     return lines.join('\n');
   }
 
-  // Dead files
+  // Dead files table with verdict column
   lines.push('## Dead Files');
+  lines.push('');
+  lines.push('| # | File | Size | Verdict |');
+  lines.push('| - | ---- | ---- | ------- |');
+
+  deadFiles.forEach((file, i) => {
+    const size = file.size != null ? formatBytes(file.size) : '';
+    const verdict = verdictLabel(file);
+    lines.push(`| ${i + 1} | \`${file.path}\` | ${size} | ${verdict} |`);
+  });
+
+  lines.push('');
+
+  // Detailed list
+  lines.push('### Details');
   lines.push('');
 
   deadFiles.forEach((file, i) => {
@@ -66,10 +89,22 @@ export function report(results, options = {}) {
       lines.push(`   - Exports: ${file.exports.map((e) => `\`${e}\``).join(', ')}`);
     }
 
+    // Evidence summary
+    if (file.evidence) {
+      const ev = file.evidence;
+      const evParts = [];
+      if (ev.entryPoints) evParts.push(`Not reachable from ${ev.entryPoints.total} entry points`);
+      if (ev.dynamicCheck?.matchedPattern) evParts.push(`Matches "${ev.dynamicCheck.matchedPattern}" pattern`);
+      if (ev.confidence) evParts.push(`Confidence: ${Math.round(ev.confidence.score * 100)}% (${ev.confidence.label})`);
+      if (evParts.length > 0) {
+        lines.push(`   - Evidence: ${evParts.join('. ')}`);
+      }
+    }
+
     if (file.aiQualification) {
       const ai = file.aiQualification;
       if (ai.error) {
-        lines.push(`   - AI: ⚠️ ${ai.error}`);
+        lines.push(`   - AI: ${ai.error}`);
       } else {
         const pct = Math.round(ai.confidence * 100);
         lines.push(`   - AI: **${pct}% dead** · ${ai.recommendation}`);

@@ -20,6 +20,7 @@ export async function applyFix(projectPath, scanResult, options = {}) {
   const {
     dryRun = false,
     minConfidence = 0,
+    includeUncertain = false,
     noImportClean = false,
     noBarrelClean = false,
     noGitCommit = false,
@@ -40,9 +41,29 @@ export async function applyFix(projectPath, scanResult, options = {}) {
   // Get dead files from scan result
   let deadFiles = scanResult.deadFiles || [];
 
-  // Filter by AI confidence if available
+  // Skip possibly-live files unless explicitly included
+  if (!includeUncertain) {
+    const beforeCount = deadFiles.length;
+    deadFiles = deadFiles.filter(f => {
+      if (f.verdict === 'possibly-live') return false;
+      // Also check numeric confidence: require >= 0.8 for auto-fix
+      const evidenceScore = f.evidence?.confidence?.score;
+      if (evidenceScore !== undefined && evidenceScore < 0.8) return false;
+      return true;
+    });
+    const skippedCount = beforeCount - deadFiles.length;
+    if (skippedCount > 0 && verbose) {
+      console.log(`  Skipped ${skippedCount} possibly-live/low-confidence file(s). Use --include-uncertain to include.`);
+    }
+  }
+
+  // Filter by confidence threshold (supports both AI confidence and evidence score)
   if (minConfidence > 0) {
     deadFiles = deadFiles.filter(f => {
+      // Prefer evidence-based numeric score
+      const evidenceScore = f.evidence?.confidence?.score;
+      if (evidenceScore !== undefined) return evidenceScore >= minConfidence;
+      // Fall back to AI confidence
       const confidence = f.aiConfidence ?? f.confidence ?? 1;
       return confidence >= minConfidence;
     });

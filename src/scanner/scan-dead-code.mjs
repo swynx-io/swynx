@@ -75,7 +75,7 @@ async function chunkedParse(files, parserType, onProgress) {
   for (let c = 0; c < totalChunks; c++) {
     const start = c * CHUNK_SIZE;
     const chunk = files.slice(start, start + CHUNK_SIZE);
-    onProgress({ phase: 'parse', message: `Parsing chunk ${c + 1}/${totalChunks} (${chunk.length} files)...` });
+    onProgress({ phase: 'scan', message: `Parsing chunk ${c + 1}/${totalChunks} (${chunk.length} files)...` });
 
     const chunkResults = parallelParse(chunk, parserType);
     if (chunkResults) {
@@ -175,15 +175,15 @@ export async function scanDeadCode(projectPath, options = {}) {
   const { exclude = DEFAULT_EXCLUDE, onProgress = () => {} } = options;
   const t0 = Date.now();
 
-  // Phase 1: Discover files
-  onProgress({ phase: 'discovery', message: 'Discovering files...' });
+  // Phase 1: Search — discover files, structure, languages
+  onProgress({ phase: 'search', message: 'Discovering files...' });
   const files = await discoverFiles(projectPath, { exclude });
   const categorised = categoriseFiles(files);
   const totalFiles = files.length;
-  onProgress({ phase: 'discovery', message: `${totalFiles} files discovered` });
+  onProgress({ phase: 'search', message: `${totalFiles} files discovered` });
 
-  // Phase 2: Parse JS/TS — use chunked pipeline for large repos
-  onProgress({ phase: 'parse', message: `Parsing ${categorised.javascript.length} JS/TS files...` });
+  // Phase 2: Scan — parse files, extract imports/exports/functions
+  onProgress({ phase: 'scan', message: `Parsing ${categorised.javascript.length} JS/TS files...` });
   const jsFiles = categorised.javascript;
   let jsAnalysis;
   if (jsFiles.length > CHUNK_THRESHOLD) {
@@ -200,9 +200,9 @@ export async function scanDeadCode(projectPath, options = {}) {
       }
     }
   }
-  onProgress({ phase: 'parse', message: `Parsed ${jsAnalysis.length} JS/TS files` });
+  onProgress({ phase: 'scan', message: `Parsed ${jsAnalysis.length} JS/TS files` });
 
-  // Phase 3: Parse other languages
+  // Phase 3: Scan — parse other languages
   const otherLangFiles = [
     ...categorised.python || [],
     ...categorised.java || [],
@@ -231,7 +231,7 @@ export async function scanDeadCode(projectPath, options = {}) {
   ];
   const otherLangAnalysis = [];
   if (otherLangFiles.length > 0) {
-    onProgress({ phase: 'parse', message: `Parsing ${otherLangFiles.length} other-language files...` });
+    onProgress({ phase: 'scan', message: `Parsing ${otherLangFiles.length} other-language files...` });
     if (otherLangFiles.length > CHUNK_THRESHOLD) {
       // B3: Chunked parse for large non-JS repos
       otherLangAnalysis.push(...await chunkedParse(otherLangFiles, 'other', onProgress));
@@ -248,15 +248,15 @@ export async function scanDeadCode(projectPath, options = {}) {
         }
       }
     }
-    onProgress({ phase: 'parse', message: `Parsed ${otherLangAnalysis.length} other-language files` });
+    onProgress({ phase: 'scan', message: `Parsed ${otherLangAnalysis.length} other-language files` });
   }
 
-  // Phase 4: Build import graph
-  onProgress({ phase: 'graph', message: 'Building import graph...' });
+  // Phase 4: Analyse — build import graph, BFS reachability
+  onProgress({ phase: 'analyse', message: 'Building import graph...' });
   const importGraph = await analyseImports(jsAnalysis);
 
-  // Phase 5: Find dead code
-  onProgress({ phase: 'detection', message: 'Detecting dead code...' });
+  // Phase 5: Analyse — detect dead code
+  onProgress({ phase: 'analyse', message: 'Detecting dead code...' });
   let packageJson = {};
   try {
     packageJson = JSON.parse(readFileSync(join(projectPath, 'package.json'), 'utf-8'));
@@ -264,6 +264,9 @@ export async function scanDeadCode(projectPath, options = {}) {
 
   const allCodeAnalysis = [...jsAnalysis, ...otherLangAnalysis];
   const deadCode = await findDeadCode(allCodeAnalysis, importGraph, projectPath, packageJson, {});
+
+  // Phase 6: Document — assemble evidence trail per verdict
+  onProgress({ phase: 'document', message: 'Assembling evidence trails...' });
 
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   onProgress({ phase: 'done', message: `Done in ${elapsed}s` });
@@ -277,7 +280,9 @@ export async function scanDeadCode(projectPath, options = {}) {
     size: f.sizeBytes || f.size || 0,
     lines: f.lineCount || f.lines || 0,
     language: f.language || detectLanguage(f.file),
-    exports: (f.exports || []).map(e => typeof e === 'string' ? { name: e, type: 'unknown' } : e)
+    exports: (f.exports || []).map(e => typeof e === 'string' ? { name: e, type: 'unknown' } : e),
+    verdict: f.verdict || null,
+    evidence: f.evidence || null
   }));
 
   // Sort by size descending

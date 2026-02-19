@@ -31,6 +31,41 @@ function formatBytes(bytes) {
 }
 
 /**
+ * Format a verdict badge for display
+ */
+function verdictBadge(file, c) {
+  const ev = file.evidence;
+  if (!ev || !ev.confidence) return '';
+  const pct = Math.round(ev.confidence.score * 100);
+  const verdict = file.verdict || 'unreachable';
+  if (verdict === 'possibly-live') {
+    return c.yellow(`  [POSSIBLY LIVE ${pct}%]`);
+  }
+  if (verdict === 'partially-unreachable') {
+    return c.yellow(`  [PARTIAL ${pct}%]`);
+  }
+  return c.green(`  [UNREACHABLE ${pct}%]`);
+}
+
+/**
+ * Format evidence summary for a file
+ */
+function evidenceSummary(file, c) {
+  const ev = file.evidence;
+  if (!ev) return null;
+  const parts = [];
+  if (ev.entryPoints) {
+    parts.push(`Not reachable from ${ev.entryPoints.total} entry points`);
+  }
+  if (ev.dynamicCheck?.matchedPattern) {
+    parts.push(`Filename matches "${ev.dynamicCheck.matchedPattern}" pattern`);
+  } else if (ev.dynamicCheck) {
+    parts.push('No dynamic loading pattern');
+  }
+  return parts.length > 0 ? `     ${c.dim(parts.join('. ') + '.')}` : null;
+}
+
+/**
  * @param {object} results
  * @param {object} [options]
  * @returns {string}
@@ -86,11 +121,21 @@ export function report(results, options = {}) {
     if (file.size != null) meta.push(formatBytes(file.size));
     if (file.lines != null) meta.push(`${file.lines} lines`);
     const metaStr = meta.length ? ` (${meta.join(', ')})` : '';
+    const badge = verdictBadge(file, c);
 
-    lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(file.path)}${c.dim(metaStr)}`);
+    lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(file.path)}${c.dim(metaStr)}${badge}`);
 
     if (file.exports && file.exports.length > 0) {
       lines.push(`     ${c.dim('Exports:')} ${file.exports.join(', ')}`);
+    }
+
+    // Evidence summary
+    const evLine = evidenceSummary(file, c);
+    if (evLine) lines.push(evLine);
+
+    // Verify hint for possibly-live files
+    if (file.verdict === 'possibly-live' && file.evidence?.dynamicCheck?.matchedPattern) {
+      lines.push(`     ${c.dim('Verify:')} grep -r "${file.evidence.dynamicCheck.matchedPattern}" --include="*.ts"`);
     }
 
     if (file.aiQualification) {

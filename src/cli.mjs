@@ -29,7 +29,9 @@ function toReporterShape(scanResult) {
       size: f.size,
       lines: f.lines,
       language: f.language,
-      exports: (f.exports || []).map(e => e.name)
+      exports: (f.exports || []).map(e => e.name),
+      verdict: f.verdict || null,
+      evidence: f.evidence || null
     })),
     deadFunctions: scanResult.deadFunctions || []
   };
@@ -57,6 +59,7 @@ program
   .option('--no-import-clean', 'skip cleaning imports from live files')
   .option('--no-barrel-clean', 'skip cleaning barrel file re-exports')
   .option('--no-git-commit', 'skip creating a git commit after fix')
+  .option('--include-uncertain', 'include possibly-live files in --fix (default: skip them)')
   .option('--confirm', 'require confirmation before fixing (default with --fix)')
   .action(async (path, opts) => {
     const root = resolve(path);
@@ -68,8 +71,21 @@ program
       console.error(`Scanning ${root} ...`);
     }
 
+    const PIPELINE_LABELS = {
+      search: '1/7 Search',
+      scan: '2/7 Scan',
+      analyse: '3/7 Analyse',
+      document: '4/7 Document',
+      report: '5/7 Report',
+      qualify: '6/7 Qualify',
+      quantify: '7/7 Quantify',
+      done: 'Done'
+    };
     const onProgress = ({ phase, message }) => {
-      if (opts.verbose && message) console.error(`  [${phase}] ${message}`);
+      if (opts.verbose && message) {
+        const label = PIPELINE_LABELS[phase] || phase;
+        console.error(`  [${label}] ${message}`);
+      }
     };
 
     const knowledge = await loadKnowledge();
@@ -153,6 +169,7 @@ program
       const fixResult = await applyFix(root, results, {
         dryRun: opts.dryRun,
         minConfidence: opts.minConfidence,
+        includeUncertain: opts.includeUncertain || false,
         noImportClean: opts.importClean === false,
         noBarrelClean: opts.barrelClean === false,
         noGitCommit: opts.gitCommit === false,
