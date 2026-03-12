@@ -65,6 +65,8 @@ import { loadLicense, saveLicense } from '../../license/storage.mjs';
 import { VERSION, checkForUpdate, getVersionInfo, installUpdate } from '../../cli/commands/update.mjs';
 import { getSettings, saveSettings, getSetting, isFeatureEnabled } from '../../config/store.mjs';
 import { calculateEmissions } from '../../emissions/index.mjs';
+import { calculateDecayScores } from '../../scanner/analysers/decay.mjs';
+import { extractGitHistory } from '../../scanner/analysers/git-history.mjs';
 import { availableParallelism, totalmem, freemem, platform } from 'os';
 import { execFile, execSync } from 'child_process';
 import { readdirSync, statSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
@@ -558,7 +560,7 @@ export async function createRoutes() {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || `http://localhost:${req.socket.localPort}`);
     res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
     res.flushHeaders();
 
@@ -2026,6 +2028,151 @@ export async function createRoutes() {
     }
   });
 
+  // Get decay analysis (Intelligence tab)
+  router.get('/drill/decay/:scanId', async (req, res) => {
+    try {
+      const scan = await getScanById(req.params.scanId);
+      if (!scan) {
+        return res.status(404).json({ success: false, error: 'Scan not found' });
+      }
+
+      const scanData = typeof scan.raw_data === 'string' ? JSON.parse(scan.raw_data) : scan.raw_data || scan;
+      const projectPath = scan.project_path || scanData.projectPath || '';
+
+      const deadCode = scanData.details?.deadCode || scanData.deadCode || {};
+      const deadFilePaths = new Set(
+        (deadCode.fullyDeadFiles || deadCode.orphanFiles || deadCode.files || [])
+          .map(f => f.file || f.relativePath || f.path)
+      );
+
+      // Build partial dead map for export usage ratio
+      const partialDeadMap = new Map();
+      for (const pdf of (deadCode.partiallyDeadFiles || [])) {
+        const fp = pdf.file || pdf.relativePath;
+        if (fp) partialDeadMap.set(fp, pdf);
+      }
+
+      // Build importer count from jsAnalysis: who imports each file
+      const jsAnalysis = scanData.details?.jsAnalysis || {};
+      const importerCount = new Map(); // filePath → count of files that import it
+      const allSourceFiles = new Map(); // relativePath → jsAnalysis entry
+
+      for (const entry of Object.values(jsAnalysis)) {
+        const rel = entry.file?.relativePath;
+        if (!rel) continue;
+        allSourceFiles.set(rel, entry);
+
+        // Count how many files import each target
+        for (const imp of (entry.imports || [])) {
+          const source = imp.source || imp.from || imp.module || '';
+          // Resolve relative imports to file paths
+          if (source.startsWith('.')) {
+            const dir = dirname(rel);
+            let resolved = join(dir, source).replace(/\\/g, '/');
+            // Try with extensions
+            for (const ext of ['', '.ts', '.tsx', '.js', '.jsx', '.mjs']) {
+              const candidate = resolved + ext;
+              if (allSourceFiles.has(candidate) || deadFilePaths.has(candidate)) {
+                importerCount.set(candidate, (importerCount.get(candidate) || 0) + 1);
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // Second pass now that allSourceFiles is fully populated
+      importerCount.clear();
+      for (const [rel, entry] of allSourceFiles) {
+        for (const imp of (entry.imports || [])) {
+          const source = imp.source || imp.from || imp.module || '';
+          if (!source.startsWith('.')) continue;
+          const dir = dirname(rel);
+          let resolved = join(dir, source).replace(/\\/g, '/');
+          for (const ext of ['', '.ts', '.tsx', '.js', '.jsx', '.mjs']) {
+            const candidate = resolved + ext;
+            if (allSourceFiles.has(candidate)) {
+              importerCount.set(candidate, (importerCount.get(candidate) || 0) + 1);
+              break;
+            }
+          }
+        }
+      }
+
+      // Collect live files (not fully dead)
+      const liveFiles = [];
+      for (const [rel, entry] of allSourceFiles) {
+        if (deadFilePaths.has(rel)) continue;
+        liveFiles.push({
+          path: rel,
+          importers: importerCount.get(rel) || 0,
+          exports: entry.exports || [],
+          partialDead: partialDeadMap.get(rel),
+          sizeBytes: entry.size || 0
+        });
+      }
+
+      // Extract git history for live files
+      let gitHistoryMap = new Map();
+      if (projectPath && existsSync(projectPath)) {
+        try {
+          gitHistoryMap = await extractGitHistory(
+            projectPath,
+            liveFiles.map(f => ({ relativePath: f.path })),
+            { timeoutMs: 15000 }
+          );
+        } catch {
+          // Git history unavailable — mtime staleness will still work
+        }
+      }
+
+      // Build file_history rows for the decay scorer
+      const fileHistoryRows = liveFiles.map(f => {
+        const git = gitHistoryMap.get(f.path) || {};
+        const totalExports = f.exports?.length || 0;
+        const deadExports = f.partialDead?.summary?.deadExports || 0;
+
+        // Get file mtime for mtime staleness signal
+        let fileMtime = null;
+        if (projectPath) {
+          try {
+            const fullPath = join(projectPath, f.path);
+            if (existsSync(fullPath)) {
+              fileMtime = statSync(fullPath).mtime.toISOString();
+            }
+          } catch {}
+        }
+
+        return {
+          file_path: f.path,
+          is_dead: false,
+          commits_30d: git.commits30d || 0,
+          commits_90d: git.commits90d || 0,
+          commits_365d: git.commits365d || 0,
+          contributors_all: git.contributorsAll || 0,
+          contributors_90d: git.contributors90d || 0,
+          last_commit_date: git.lastCommitDate || null,
+          file_mtime: fileMtime,
+          importer_count: f.importers,
+          export_total: totalExports,
+          export_dead: deadExports,
+          file_size_bytes: f.sizeBytes
+        };
+      });
+
+      // Run decay scoring
+      const decayResult = calculateDecayScores(fileHistoryRows, null);
+
+      res.json({
+        success: true,
+        summary: decayResult.summary,
+        candidates: decayResult.candidates
+      });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // === Asset Drill-Down Endpoints ===
 
   // Get full assets analysis summary
@@ -3267,7 +3414,8 @@ export async function createRoutes() {
       await warmModel();
       res.json({ success: true, message: 'Model warmed' });
     } catch (error) {
-      res.json({ success: false, error: error.message });
+      console.error('[AI warm] Failed:', error.message);
+      res.json({ success: false, error: 'Failed to warm AI model' });
     }
   });
 
@@ -3630,8 +3778,8 @@ export async function createRoutes() {
       }
 
       // Run uninstall
-      const { execSync: exec } = await import('child_process');
-      const output = exec(`${cmd} ${args.join(' ')}`, {
+      const { execFileSync } = await import('child_process');
+      const output = execFileSync(cmd, args, {
         cwd: projectPath,
         timeout: 60000,
         encoding: 'utf8',
@@ -3683,8 +3831,8 @@ export async function createRoutes() {
         args = ['add', `${packageName}@${version}`];
       }
 
-      const { execSync: exec } = await import('child_process');
-      const output = exec(`${cmd} ${args.join(' ')}`, {
+      const { execFileSync } = await import('child_process');
+      const output = execFileSync(cmd, args, {
         cwd: projectPath,
         timeout: 120000,
         encoding: 'utf8',
