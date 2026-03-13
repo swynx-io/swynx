@@ -1933,8 +1933,8 @@ const ENTRY_POINT_PATTERNS = [
   /\/schemas\//,
 
   // Database migrations (loaded dynamically by ORMs like TypeORM, Prisma)
-  /\/migrations\//,
-  /\/seeds?\//,
+  /\/migrations\//, /^migrations\//,
+  /\/seeds?\//, /^seeds?\//,
   // Database seed files (named seed-*.ts, *-seed.ts, *.seed.ts)
   /seed[.-][^/]+\.([mc]?[jt]s|[jt]sx)$/,
 
