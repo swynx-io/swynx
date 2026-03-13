@@ -428,7 +428,7 @@ function extractPathAliases(projectPath) {
   const aliases = new Map();  // Global aliases (from root)
   const packageAliases = new Map();  // Per-package aliases: packageDir -> Map<alias, target>
 
-  if (!projectPath) return { aliases, packageAliases, packageBaseUrls: new Map(), workspacePackages: new Map(), goModulePath: null, javaSourceRoots: [] };
+  if (!projectPath) return { aliases, packageAliases, packageBaseUrls: new Map(), workspacePackages: new Map(), goModulePath: null, javaSourceRoots: [], angularEntryPoints: new Set() };
 
   // Check for config files in root and common subdirectories
   // For monorepos like client/server structure
@@ -1026,6 +1026,52 @@ function extractPathAliases(projectPath) {
     }
   }
 
+  // Parse angular.json for Angular project entry points
+  // Angular defines entry points in angular.json → projects.*.architect.build.options.browser (or .main)
+  const angularEntryPoints = new Set();
+  const parseAngularJson = (jsonPath, prefix = '') => {
+    try {
+      const angularJson = JSON.parse(readFileSync(jsonPath, 'utf8'));
+      if (angularJson.projects) {
+        for (const [, proj] of Object.entries(angularJson.projects)) {
+          const buildOpts = proj?.architect?.build?.options || {};
+          const entryFile = buildOpts.browser || buildOpts.main;
+          if (entryFile) {
+            const root = proj.root || '';
+            const resolved = root ? join(prefix, root, entryFile) : join(prefix, entryFile);
+            angularEntryPoints.add(resolved.replace(/^\.\//, ''));
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  };
+  // Check root-level angular.json
+  if (existsSync(join(projectPath, 'angular.json'))) {
+    parseAngularJson(join(projectPath, 'angular.json'));
+  }
+  // Scan up to 3 levels deep for nested angular.json (monorepo/subdirectory Angular apps)
+  const angularSkipDirs = new Set(['node_modules', '.git', 'dist', 'build', 'vendor', 'tmp', '.angular']);
+  try {
+    for (const d1 of readdirSync(projectPath, { withFileTypes: true })) {
+      if (!d1.isDirectory() || angularSkipDirs.has(d1.name) || d1.name.startsWith('.')) continue;
+      const p1 = join(projectPath, d1.name);
+      if (existsSync(join(p1, 'angular.json'))) parseAngularJson(join(p1, 'angular.json'), d1.name);
+      try {
+        for (const d2 of readdirSync(p1, { withFileTypes: true })) {
+          if (!d2.isDirectory() || angularSkipDirs.has(d2.name) || d2.name.startsWith('.')) continue;
+          const p2 = join(p1, d2.name);
+          if (existsSync(join(p2, 'angular.json'))) parseAngularJson(join(p2, 'angular.json'), join(d1.name, d2.name));
+          try {
+            for (const d3 of readdirSync(p2, { withFileTypes: true })) {
+              if (!d3.isDirectory() || angularSkipDirs.has(d3.name) || d3.name.startsWith('.')) continue;
+              const p3 = join(p2, d3.name);
+              if (existsSync(join(p3, 'angular.json'))) parseAngularJson(join(p3, 'angular.json'), join(d1.name, d2.name, d3.name));
+            }
+          } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
   // Detect Java/Kotlin source roots (Maven/Gradle conventions)
   // These help resolve package imports like com.example.Service -> src/main/java/com/example/Service.java
   const javaSourceRoots = [];
@@ -1070,7 +1116,7 @@ function extractPathAliases(projectPath) {
     }
   } catch {}
 
-  const result = { aliases, packageAliases, packageBaseUrls, workspacePackages, goModulePath, javaSourceRoots };
+  const result = { aliases, packageAliases, packageBaseUrls, workspacePackages, goModulePath, javaSourceRoots, angularEntryPoints };
   _pathAliasesCache = result;
   _pathAliasesCacheProjectPath = projectPath;
   return result;
@@ -3883,7 +3929,7 @@ function buildReachableFiles(entryPointFiles, jsAnalysis, projectPath = null, ad
 
   // Extract path aliases from tsconfig.json / vite.config.ts
   // Returns global aliases, per-package aliases, baseUrls, and workspace package mapping for monorepo support
-  const { aliases: pathAliases, packageAliases, packageBaseUrls, workspacePackages, goModulePath, javaSourceRoots } = extractPathAliases(projectPath);
+  const { aliases: pathAliases, packageAliases, packageBaseUrls, workspacePackages, goModulePath, javaSourceRoots, angularEntryPoints } = extractPathAliases(projectPath);
 
   // Build Java/Kotlin fully-qualified class name → file path mapping
   // e.g. "com.example.service.UserService" → "module/src/main/java/com/example/service/UserService.java"
@@ -5487,6 +5533,9 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
   // This builds a transitive dependency graph so all files in referenced projects are entry points
   const csprojReferencedDirs = parseCsprojReferences(projectPath);
 
+  // Get Angular entry points (parsed from angular.json in extractPathAliases, cached)
+  const { angularEntryPoints } = extractPathAliases(projectPath);
+
   // Detect Deno workspaces (deno.json with "workspace" array)
   // Each workspace member's mod.ts/main.ts is an entry point
   const denoWorkspaceDirs = new Set();
@@ -5554,6 +5603,53 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       const gemspecFiles = readdirSync(projectPath).filter(f => f.endsWith('.gemspec'));
       if (gemspecFiles.length > 0) {
         rubyGemLibDirs.add('lib');
+      }
+    } catch { /* ignore */ }
+  }
+
+  // Detect Rails/Zeitwerk autoloading directories
+  // Rails apps autoload ALL .rb files under app/ and lib/ by convention (Zeitwerk loader).
+  // Also detect plugin.rb files in plugins/ (used by Discourse, Redmine, etc.)
+  const railsAutoloadDirs = new Set();
+  if (projectPath) {
+    try {
+      const gemfilePath = join(projectPath, 'Gemfile');
+      if (existsSync(gemfilePath)) {
+        const gemfileContent = readFileSync(gemfilePath, 'utf-8');
+        // Check if this is a Rails app (gem 'rails' or gem 'railties')
+        const isRailsApp = /gem\s+['"](?:rails|railties)['"]/.test(gemfileContent);
+        if (isRailsApp) {
+          // Standard Rails autoload paths
+          railsAutoloadDirs.add('app');
+          railsAutoloadDirs.add('lib');
+          // Rails plugins (Discourse, Redmine, etc.) — each plugin has autoloaded dirs
+          try {
+            const pluginsDir = join(projectPath, 'plugins');
+            if (existsSync(pluginsDir)) {
+              for (const pluginEntry of readdirSync(pluginsDir, { withFileTypes: true })) {
+                if (pluginEntry.isDirectory()) {
+                  const pName = pluginEntry.name;
+                  railsAutoloadDirs.add(`plugins/${pName}/app`);
+                  railsAutoloadDirs.add(`plugins/${pName}/lib`);
+                  railsAutoloadDirs.add(`plugins/${pName}/assets`);
+                }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+    // Also: if this IS Rails itself (has railties/ directory), mark sub-framework lib/ dirs
+    try {
+      if (existsSync(join(projectPath, 'railties')) && existsSync(join(projectPath, 'activerecord'))) {
+        // This is the rails/rails repo itself — each sub-framework's lib/ is autoloaded
+        const railsSubFrameworks = readdirSync(projectPath, { withFileTypes: true })
+          .filter(d => d.isDirectory() && existsSync(join(projectPath, d.name, 'lib')))
+          .map(d => d.name);
+        for (const fw of railsSubFrameworks) {
+          railsAutoloadDirs.add(`${fw}/lib`);
+          railsAutoloadDirs.add(`${fw}/app`);
+        }
       }
     } catch { /* ignore */ }
   }
@@ -5785,6 +5881,17 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
       }
     }
 
+    // Angular: Mark files specified in angular.json as entry points
+    if (angularEntryPoints.size > 0 && angularEntryPoints.has(filePath)) {
+      entryPointFiles.add(filePath);
+      results.entryPoints.push({
+        file: filePath,
+        reason: 'Angular entry point (angular.json)',
+        isDynamic: false
+      });
+      continue;
+    }
+
     // PHP: Mark all .php files in composer.json autoload directories as entry points
     if (filePath.endsWith('.php') && composerAutoloadDirs.size > 0) {
       for (const autoDir of composerAutoloadDirs) {
@@ -5815,6 +5922,33 @@ export async function findDeadCode(jsAnalysis, importGraph, projectPath = null, 
         }
       }
       if (entryPointFiles.has(filePath)) continue;
+    }
+
+    // Rails/Zeitwerk: Mark .rb files in autoloaded directories as entry points
+    // Also mark plugin.rb files (loaded by plugin systems like Discourse, Redmine)
+    if (filePath.endsWith('.rb') && railsAutoloadDirs.size > 0) {
+      for (const autoDir of railsAutoloadDirs) {
+        if (filePath.startsWith(autoDir + '/')) {
+          entryPointFiles.add(filePath);
+          results.entryPoints.push({
+            file: filePath,
+            reason: `Rails autoloaded directory: ${autoDir}/`,
+            isDynamic: false
+          });
+          break;
+        }
+      }
+      if (entryPointFiles.has(filePath)) continue;
+    }
+    // Standalone plugin.rb files (convention used by Discourse, Redmine, etc.)
+    if (filePath.endsWith('/plugin.rb') && filePath.startsWith('plugins/')) {
+      entryPointFiles.add(filePath);
+      results.entryPoints.push({
+        file: filePath,
+        reason: 'Plugin entry point (plugin.rb)',
+        isDynamic: false
+      });
+      continue;
     }
 
     // Deno workspace: treat mod.ts/main.ts in each workspace member as entry point
