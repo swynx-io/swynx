@@ -1072,6 +1072,65 @@ function extractPathAliases(projectPath) {
       } catch { /* ignore */ }
     }
   } catch { /* ignore */ }
+
+  // Parse Nx project.json files for entry points
+  // Nx monorepos define build entry points in per-project project.json files
+  // e.g. { "targets": { "build": { "options": { "main": "src/main.ts" } } } }
+  if (existsSync(join(projectPath, 'nx.json'))) {
+    const nxSkipDirs = new Set(['node_modules', '.git', 'dist', 'build', '.nx', '.angular']);
+    const parseProjectJson = (jsonPath, prefix) => {
+      try {
+        const proj = JSON.parse(readFileSync(jsonPath, 'utf8'));
+        // Check all targets for "main" entry points
+        if (proj.targets) {
+          for (const [, target] of Object.entries(proj.targets)) {
+            // Check options.main / options.browser
+            const mainFile = target?.options?.main || target?.options?.browser;
+            if (mainFile && typeof mainFile === 'string') {
+              angularEntryPoints.add(mainFile.replace(/^\.\//, ''));
+            }
+            // Check configurations.*.main (Nx per-config overrides, e.g. commercial builds)
+            if (target?.configurations) {
+              for (const [, cfg] of Object.entries(target.configurations)) {
+                const cfgMain = cfg?.main || cfg?.browser;
+                if (cfgMain && typeof cfgMain === 'string') {
+                  angularEntryPoints.add(cfgMain.replace(/^\.\//, ''));
+                }
+              }
+            }
+          }
+        }
+        // Also check root-level "main" (older Nx format)
+        if (proj.main) {
+          angularEntryPoints.add(proj.main.replace(/^\.\//, ''));
+        }
+      } catch { /* ignore */ }
+    };
+    // Scan apps/ and libs/ (and other Nx dirs) for project.json files
+    const nxDirs = ['apps', 'libs', 'packages', 'tools', 'services', 'bitwarden_license'];
+    try {
+      // Also scan root-level directories that might contain Nx projects
+      const topEntries = readdirSync(projectPath, { withFileTypes: true });
+      for (const entry of topEntries) {
+        if (!entry.isDirectory() || nxSkipDirs.has(entry.name) || entry.name.startsWith('.')) continue;
+        // Recursively scan up to 4 levels for project.json
+        const scanForProjectJson = (dir, depth = 0) => {
+          if (depth > 4) return;
+          try {
+            const pjPath = join(projectPath, dir, 'project.json');
+            if (existsSync(pjPath)) parseProjectJson(pjPath, dir);
+            for (const sub of readdirSync(join(projectPath, dir), { withFileTypes: true })) {
+              if (sub.isDirectory() && !nxSkipDirs.has(sub.name) && !sub.name.startsWith('.')) {
+                scanForProjectJson(join(dir, sub.name), depth + 1);
+              }
+            }
+          } catch { /* ignore */ }
+        };
+        scanForProjectJson(entry.name);
+      }
+    } catch { /* ignore */ }
+  }
+
   // Detect Java/Kotlin source roots (Maven/Gradle conventions)
   // These help resolve package imports like com.example.Service -> src/main/java/com/example/Service.java
   const javaSourceRoots = [];
@@ -1812,6 +1871,7 @@ const ENTRY_POINT_PATTERNS = [
   /^playwright\//,
   // Storybook stories and test storybooks
   /\.stories\.([mc]?[jt]s|[jt]sx)$/,
+  /\.lit-stories\.([mc]?[jt]s|[jt]sx)$/,
   /^test-storybooks\//,   // Storybook test storybook projects
   // Test asset directories (vendor libraries/files served in test pages)
   /\/tests?\/assets\//,
@@ -3039,7 +3099,9 @@ function isEntryPoint(filePath, packageJson = {}, projectPath = null, htmlEntryP
   // and should still be treated as entry points even if they're in abandoned packages
   if (nestedPkgCheck.isAbandoned) {
     const isDevDirectory = /(?:^|\/)(playgrounds?|examples?|demos?|samples?|fixtures?|__tests__|tests?)(?:\/|$)/i.test(filePath);
-    if (!isDevDirectory) {
+    // Storybook/test files should still be treated as entry points even in abandoned packages
+    const isTestOrStory = /\.(?:stories|spec|test|lit-stories)\.([mc]?[jt]s|[jt]sx)$/.test(filePath);
+    if (!isDevDirectory && !isTestOrStory) {
       return { isEntry: false, reason: 'In abandoned workspace package' };
     }
   }
