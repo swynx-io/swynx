@@ -107,5 +107,3 @@ export function calculateHealthScore(scanResult) {
     maxScore: 100
   };
 }
-
-export default { calculateHealthScore };

@@ -202,12 +202,3 @@ export async function commitFix(projectPath, result, options = {}) {
     dryRun
   });
 }
-
-export default {
-  isGitRepo,
-  getStatus,
-  stageDeleted,
-  stageModified,
-  createCommit,
-  commitFix
-};

@@ -27,5 +27,3 @@ const ALTERNATIVES = {
 export function getAlternatives(packageName) {
   return ALTERNATIVES[packageName] || [];
 }
-
-export default { getAlternatives };

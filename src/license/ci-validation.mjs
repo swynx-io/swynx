@@ -64,5 +64,3 @@ export async function validateCILicense(projectPath, licenseKey, email) {
     };
   }
 }
-
-export default { validateCILicense, EXIT_LICENSE_ERROR, EXIT_SCAN_ERROR };

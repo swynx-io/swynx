@@ -278,5 +278,3 @@ export function getCostMethodologyInfo() {
     }
   };
 }
-
-export default { calculateCosts, getCostMethodologyInfo };

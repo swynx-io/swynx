@@ -314,9 +314,3 @@ export function generateActionList(scanData, projectInfo = {}) {
     quickWins
   };
 }
-
-export default {
-  generateIssueId,
-  extractIssues,
-  generateActionList
-};

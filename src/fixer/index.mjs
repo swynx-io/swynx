@@ -243,17 +243,3 @@ export function getFixStatus(projectPath, scanResult) {
     recentQuarantineSessions: sessions.slice(0, 5)
   };
 }
-
-export default {
-  modules,
-  CONFIDENCE,
-  listModules,
-  getModule,
-  analyseAll,
-  previewAll,
-  previewModule,
-  applyFix,
-  applyFixes,
-  autoFix,
-  getFixStatus
-};

@@ -186,7 +186,3 @@ function cleanEmptyLines(lines) {
 
   return result;
 }
-
-export default {
-  cleanBarrelExports
-};

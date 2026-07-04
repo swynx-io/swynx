@@ -424,18 +424,3 @@ export async function addProjectToLicense(projectFingerprint, projectName, proje
 
   return { alreadyAdded: false, project: newProject };
 }
-
-export default {
-  loadLicense,
-  saveLicense,
-  registerProjectId,
-  unregisterProjectId,
-  isProjectIdLicensed,
-  getProjectById,
-  getRegisteredProjects,
-  getSlotInfo,
-  getLicenseStatus,
-  // Legacy compatibility
-  addProjectToLicense,
-  isProjectLicensed
-};

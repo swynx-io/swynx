@@ -4088,5 +4088,3 @@ export async function createRoutes() {
 
   return router;
 }
-
-export default { createRoutes };

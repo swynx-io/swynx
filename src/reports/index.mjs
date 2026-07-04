@@ -125,10 +125,3 @@ export {
   renderProgressCSV,
   renderLLMPrompt
 };
-
-export default {
-  generateReport,
-  generateDiffReport,
-  getContentType,
-  getFileExtension
-};

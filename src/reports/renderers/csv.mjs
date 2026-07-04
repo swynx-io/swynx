@@ -184,8 +184,3 @@ export function renderProgressCSV(progressReport) {
 
   return rows.join('\n');
 }
-
-export default {
-  renderActionListCSV,
-  renderProgressCSV
-};

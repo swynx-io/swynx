@@ -364,9 +364,3 @@ export async function rollbackUnifiedFix(projectPath, snapshotId = null) {
 export async function previewUnifiedFix(projectPath, scanResult, options = {}) {
   return unifiedFix(projectPath, scanResult, { ...options, dryRun: true });
 }
-
-export default {
-  unifiedFix,
-  rollbackUnifiedFix,
-  previewUnifiedFix
-};

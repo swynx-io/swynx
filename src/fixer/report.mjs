@@ -166,8 +166,3 @@ export function jsonReport(result, options = {}) {
     }
   }, null, 2);
 }
-
-export default {
-  consoleReport,
-  jsonReport
-};

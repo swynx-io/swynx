@@ -231,7 +231,3 @@ function cleanEmptyLines(lines) {
 
   return result;
 }
-
-export default {
-  cleanDeadImports
-};

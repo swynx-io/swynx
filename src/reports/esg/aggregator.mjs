@@ -379,9 +379,3 @@ export async function aggregateESGData(options = {}) {
     }
   };
 }
-
-export default {
-  parsePeriod,
-  parseCustomRange,
-  aggregateESGData
-};

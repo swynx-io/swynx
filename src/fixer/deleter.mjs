@@ -1,9 +1,28 @@
 // src/fixer/deleter.mjs
 // Safely delete dead files with optional empty directory cleanup
 
-import { existsSync, unlinkSync, rmdirSync, readdirSync, statSync } from 'fs';
-import { join, dirname, relative } from 'path';
+import { existsSync, unlinkSync, rmdirSync, readdirSync, statSync, realpathSync } from 'fs';
+import { join, dirname, relative, resolve, normalize } from 'path';
 import { createSnapshot } from './snapshot.mjs';
+
+/**
+ * Validate that a file path is safely contained within the project directory.
+ * Prevents path traversal attacks (e.g. ../../etc/passwd).
+ */
+function isPathSafe(projectPath, filePath) {
+  const resolvedProject = resolve(projectPath);
+  const resolvedFile = resolve(projectPath, filePath);
+  // Ensure the resolved path starts with the project path
+  if (!resolvedFile.startsWith(resolvedProject + '/') && resolvedFile !== resolvedProject) {
+    return false;
+  }
+  // Reject paths containing traversal sequences
+  const normalized = normalize(filePath);
+  if (normalized.startsWith('..') || normalized.startsWith('/')) {
+    return false;
+  }
+  return true;
+}
 
 /**
  * Delete dead files from disk
@@ -44,11 +63,29 @@ export async function deleteFiles(projectPath, files, options = {}) {
 
   // Delete files
   for (const file of files) {
+    // Path traversal protection
+    if (!isPathSafe(projectPath, file)) {
+      result.errors.push({ file, error: 'Path traversal rejected — file path escapes project directory' });
+      continue;
+    }
+
     const fullPath = join(projectPath, file);
 
     if (!existsSync(fullPath)) {
       result.skipped.push({ file, reason: 'not found' });
       continue;
+    }
+
+    // Verify the real path (after symlink resolution) is still inside the project
+    try {
+      const realPath = realpathSync(fullPath);
+      const realProject = realpathSync(projectPath);
+      if (!realPath.startsWith(realProject + '/')) {
+        result.errors.push({ file, error: 'Symlink target escapes project directory' });
+        continue;
+      }
+    } catch {
+      // realpathSync can fail if file doesn't exist — already handled above
     }
 
     if (dryRun) {
@@ -108,10 +145,16 @@ export function previewDelete(projectPath, files) {
   const preview = {
     wouldDelete: [],
     notFound: [],
+    rejected: [],
     totalBytes: 0
   };
 
   for (const file of files) {
+    if (!isPathSafe(projectPath, file)) {
+      preview.rejected.push({ file, reason: 'path traversal' });
+      continue;
+    }
+
     const fullPath = join(projectPath, file);
 
     if (!existsSync(fullPath)) {
@@ -133,8 +176,3 @@ export function previewDelete(projectPath, files) {
 
   return preview;
 }
-
-export default {
-  deleteFiles,
-  previewDelete
-};

@@ -155,5 +155,3 @@ function sanitiseGitUrl(url) {
   // Match https://user:token@host/path or similar
   return url.replace(/(:\/\/)[^@]+@/, '$1');
 }
-
-export default { getProjectFingerprint, getProjectDetails };

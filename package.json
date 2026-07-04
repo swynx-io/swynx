@@ -2,7 +2,7 @@
   "name": "swynx",
   "version": "1.0.1",
   "type": "module",
-  "description": "Dead code detection that learns. Find unused files across JS/TS, Python, Go, and Java.",
+  "description": "CWE-561 dead code security analysis across 26 languages. Find unreachable files, dead functions, and unused exports with evidence-backed verdicts.",
   "author": "Swynx <hello@swynx.io>",
   "license": "MIT",
   "homepage": "https://swynx.io",
@@ -11,15 +11,26 @@
     "url": "https://github.com/swynx-io/swynx"
   },
   "keywords": [
+    "cwe-561",
     "dead-code",
-    "unused-files",
+    "security",
     "static-analysis",
+    "unused-files",
+    "unused-code",
     "code-quality",
+    "sarif",
+    "ci-cd",
     "javascript",
     "typescript",
     "python",
     "java",
-    "go"
+    "go",
+    "rust",
+    "csharp",
+    "ruby",
+    "php",
+    "kotlin",
+    "swift"
   ],
   "bin": {
     "swynx": "./bin/swynx"
@@ -27,6 +38,8 @@
   "files": [
     "bin/",
     "src/",
+    "!src/tools/",
+    "!src/dashboard/",
     "README.md"
   ],
   "scripts": {

@@ -123,7 +123,7 @@ export function createIntegrationRoutes() {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || `http://localhost:${req.socket.localPort}`);
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 

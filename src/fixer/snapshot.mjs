@@ -2,7 +2,7 @@
 // Create rollback snapshots before destructive operations
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, readdirSync, statSync } from 'fs';
-import { join, dirname, relative } from 'path';
+import { join, dirname, relative, resolve, normalize } from 'path';
 import { randomUUID } from 'crypto';
 
 const SNAPSHOT_DIR = '.swynx-snapshots';
@@ -30,6 +30,12 @@ export function createSnapshot(projectPath, files, reason = 'fix') {
 
   // Copy each file to the snapshot
   for (const filePath of files) {
+    // Path traversal protection
+    const normalized = normalize(filePath);
+    if (normalized.startsWith('..') || normalized.startsWith('/')) continue;
+    const resolvedFile = resolve(projectPath, filePath);
+    if (!resolvedFile.startsWith(resolve(projectPath) + '/')) continue;
+
     const fullPath = join(projectPath, filePath);
     if (!existsSync(fullPath)) continue;
 
@@ -122,8 +128,21 @@ export function restoreSnapshot(projectPath, snapshotId) {
 
   for (const file of manifest.files) {
     try {
+      // Path traversal protection on restore
+      const normalizedOriginal = normalize(file.originalPath);
+      if (normalizedOriginal.startsWith('..') || normalizedOriginal.startsWith('/')) {
+        errors.push({ file: file.originalPath, error: 'Path traversal rejected' });
+        continue;
+      }
+
       const snapshotPath = join(snapshotDir, file.snapshotPath || join('files', file.originalPath));
       const originalPath = join(projectPath, file.originalPath);
+
+      // Verify restored path stays inside project
+      if (!resolve(originalPath).startsWith(resolve(projectPath) + '/')) {
+        errors.push({ file: file.originalPath, error: 'Restore path escapes project directory' });
+        continue;
+      }
 
       if (existsSync(snapshotPath)) {
         // Ensure directory exists
@@ -180,12 +199,3 @@ export function deleteSnapshot(projectPath, snapshotId) {
     message: `Deleted snapshot with ${fileCount} file(s)`
   };
 }
-
-export default {
-  createSnapshot,
-  listSnapshots,
-  getLatestSnapshot,
-  getSnapshot,
-  restoreSnapshot,
-  deleteSnapshot
-};

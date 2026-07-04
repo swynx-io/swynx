@@ -271,10 +271,10 @@ export async function scanDeadCode(projectPath, options = {}) {
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
   onProgress({ phase: 'done', message: `Done in ${elapsed}s` });
 
-  // Build legacy-compatible deadFiles array from fullyDeadFiles + partiallyDeadFiles
+  // Build legacy-compatible deadFiles array — only fully dead files for CLI/CI reporting
+  // Partially-dead files (with some unused exports) are available separately for dashboard detail
   const deadFiles = [
-    ...(deadCode.fullyDeadFiles || []),
-    ...(deadCode.partiallyDeadFiles || [])
+    ...(deadCode.fullyDeadFiles || [])
   ].map(f => ({
     file: f.file,
     size: f.sizeBytes || f.size || 0,

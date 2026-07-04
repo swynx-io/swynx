@@ -225,6 +225,12 @@ function buildScanSelect(includeRaw) {
   }
 
   const columns = SCAN_COLUMNS.filter((column) => column !== 'raw_data');
+  // Validate every column against the whitelist to prevent SQL injection
+  for (const col of columns) {
+    if (!SCAN_COLUMNS.includes(col)) {
+      throw new Error(`Invalid column name: ${col}`);
+    }
+  }
   return `SELECT ${columns.join(', ')} FROM scans`;
 }
 
@@ -408,18 +414,3 @@ export function closeDatabase() {
     db = null;
   }
 }
-
-export default {
-  initDatabase,
-  saveScan,
-  getRecentScans,
-  getScanById,
-  getAllScans,
-  getProjects,
-  getProjectStats,
-  getProjectConfigFromDb,
-  saveProjectConfigToDb,
-  saveResolutions,
-  getResolutions,
-  closeDatabase
-};

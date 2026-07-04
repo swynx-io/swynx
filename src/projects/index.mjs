@@ -359,16 +359,3 @@ export async function getRegisteredProjects() {
     ...slotInfo
   };
 }
-
-export default {
-  loadProjects,
-  getSlotInfo,
-  registerProject,
-  unregisterProject,
-  getProject,
-  getProjectByPath,
-  updateProjectScanTime,
-  isProjectRegistered,
-  syncWithLicense,
-  getRegisteredProjects
-};

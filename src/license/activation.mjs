@@ -305,10 +305,3 @@ export async function verifyLicense() {
     return { valid: true, offline: true };
   }
 }
-
-export default {
-  activateLicense,
-  activateProject,
-  linkProject,
-  verifyLicense
-};

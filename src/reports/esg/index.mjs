@@ -128,12 +128,3 @@ export {
   generateProjectSummaryCSV,
   generateESGPDF
 };
-
-export default {
-  generateESGReport,
-  getDatePresets,
-  logESGExport,
-  aggregateESGData,
-  parsePeriod,
-  parseCustomRange
-};

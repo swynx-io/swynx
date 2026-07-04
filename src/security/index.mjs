@@ -446,30 +446,3 @@ function formatBytes(bytes) {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
-
-export default {
-  // Layer 1
-  checkTelemetryPackages,
-  logNetworkCall,
-  getNetworkAuditLog,
-  clearNetworkAuditLog,
-
-  // Layer 2
-  generateMachineFingerprintSync,
-  verifyLicenseSignature,
-  activateOffline,
-
-  // Layer 3
-  getProjectStorageDir,
-  getProjectScansDir,
-  listGlobalStorage,
-  checkDataContainment,
-
-  // Audit
-  runSecurityAudit,
-
-  // Constants
-  GLOBAL_DIR,
-  NETWORK_LOG,
-  LICENSE_FILE
-};

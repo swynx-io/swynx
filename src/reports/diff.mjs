@@ -147,8 +147,3 @@ export function generateProgressReport(diff) {
     nextActions: nextActions.slice(0, 5)
   };
 }
-
-export default {
-  generateDiff,
-  generateProgressReport
-};

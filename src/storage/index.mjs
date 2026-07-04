@@ -27,17 +27,3 @@ export {
   saveResolutions,
   getResolutions
 };
-
-export default {
-  initDatabase,
-  saveScan,
-  getRecentScans,
-  getScanById,
-  getAllScans,
-  getProjects,
-  getProjectStats,
-  getProjectConfigFromDb,
-  saveProjectConfigToDb,
-  saveResolutions,
-  getResolutions
-};

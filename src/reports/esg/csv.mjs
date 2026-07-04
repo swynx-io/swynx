@@ -95,8 +95,3 @@ export function generateProjectSummaryCSV(data) {
 
   return lines.join('\n');
 }
-
-export default {
-  generateESGCSV,
-  generateProjectSummaryCSV
-};

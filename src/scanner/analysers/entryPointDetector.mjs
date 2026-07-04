@@ -63,22 +63,77 @@ const DEFAULT_ENTRY_PATTERNS = [
  */
 const DI_DECORATORS_BY_LANGUAGE = {
   javascript: [
+    // NestJS core
     'Service', 'Injectable', 'Controller', 'Module', 'Component',
     'Entity', 'Repository', 'Resolver', 'Guard', 'Pipe',
-    'EventSubscriber', 'Subscriber', 'Singleton'
+    'EventSubscriber', 'Subscriber', 'Singleton',
+    // NestJS extended
+    'Catch', 'UseGuards', 'UseInterceptors', 'UseFilters', 'UsePipes',
+    'EventHandler', 'WebSocketGateway', 'MessagePattern', 'EventPattern',
+    'Global', 'Middleware',
+    // TypeORM / MikroORM
+    'ViewEntity', 'ChildEntity', 'ViewColumn', 'ManyToOne', 'OneToMany',
+    // Angular
+    'Directive', 'NgModule', 'Input', 'Output', 'HostListener',
+    // General DI
+    'Provide', 'Provider', 'BackendModule', 'Plugin'
   ],
   java: [
+    // Spring core
     'Service', 'Component', 'Repository', 'Controller', 'RestController',
     'Configuration', 'Bean', 'Autowired', 'Inject', 'Named', 'Singleton',
-    'Entity', 'ManagedBean', 'Stateless', 'Stateful'
+    'Entity', 'ManagedBean', 'Stateless', 'Stateful',
+    // Spring extended
+    'ConditionalOnBean', 'ConditionalOnMissingBean', 'ConditionalOnProperty',
+    'ConditionalOnClass', 'Profile', 'EventListener', 'Async',
+    'Scheduled', 'EnableScheduling', 'PostConstruct', 'PreDestroy',
+    'RequestMapping', 'GetMapping', 'PostMapping', 'PutMapping', 'DeleteMapping',
+    // Quarkus
+    'ApplicationScoped', 'RequestScoped', 'Dependent', 'Produces',
+    // Dagger
+    'Provides', 'Binds', 'IntoMap', 'IntoSet', 'Subcomponent',
+    // Micronaut
+    'Introspected', 'Factory', 'Requires',
+    // Jakarta / JPA
+    'Embeddable', 'MappedSuperclass', 'Table', 'Converter',
+    // Jackson
+    'JsonCreator', 'JsonProperty', 'JsonDeserialize', 'JsonSerialize',
+    // JUnit/Testing (prevent FPs)
+    'Test', 'BeforeEach', 'AfterEach', 'ParameterizedTest', 'ExtendWith'
   ],
   csharp: [
+    // ASP.NET Core
     'Controller', 'ApiController', 'Service', 'Scoped', 'Singleton', 'Transient',
-    'Entity', 'Table', 'DbContext', 'Injectable'
+    'Entity', 'Table', 'DbContext', 'Injectable',
+    // ASP.NET extended
+    'HttpGet', 'HttpPost', 'HttpPut', 'HttpDelete', 'Route', 'Authorize',
+    'ActionFilter', 'ExceptionFilter', 'ResultFilter',
+    // Entity Framework
+    'Owned', 'Keyless', 'NotMapped',
+    // Autofac / DI
+    'RegisterType', 'RegisterModule', 'InjectableAttribute',
+    // Validation
+    'Validator', 'Required', 'MaxLength', 'MinLength'
   ],
   python: [
     'app.route', 'router.get', 'router.post', 'router.put', 'router.delete',
-    'task', 'shared_task', 'celery.task'
+    'task', 'shared_task', 'celery.task',
+    // FastAPI
+    'app.get', 'app.post', 'app.put', 'app.delete', 'app.patch',
+    'Depends', 'APIRouter',
+    // Django
+    'admin.register', 'receiver', 'register',
+    // General
+    'pytest.fixture', 'pytest.mark', 'classmethod', 'staticmethod', 'property',
+    'abstractmethod', 'overload'
+  ],
+  go: [
+    // Wire DI
+    'wire.Struct', 'wire.Bind', 'wire.Value', 'wire.InterfaceValue',
+    // Fx DI
+    'fx.Provide', 'fx.Invoke', 'fx.Supply',
+    // Dig DI
+    'dig.In', 'dig.Out'
   ]
 };
 

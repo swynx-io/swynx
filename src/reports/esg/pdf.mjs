@@ -321,7 +321,3 @@ export async function generateESGPDF(data) {
     }
   });
 }
-
-export default {
-  generateESGPDF
-};

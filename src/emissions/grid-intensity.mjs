@@ -71,5 +71,3 @@ export function getGridIntensity(region) {
 export function getAvailableRegions() {
   return Object.keys(GRID_INTENSITY);
 }
-
-export default { getGridIntensity, getAvailableRegions };

@@ -206,13 +206,3 @@ export function getQuarantineSize(projectPath) {
   const sessions = listSessions(projectPath);
   return sessions.reduce((sum, s) => sum + (s.totalSize || 0), 0);
 }
-
-export default {
-  createSession,
-  quarantineFile,
-  listSessions,
-  getSession,
-  restoreSession,
-  purgeSession,
-  getQuarantineSize
-};

@@ -341,8 +341,3 @@ function groupBy(arr, key) {
     return acc;
   }, {});
 }
-
-export default {
-  renderActionListMarkdown,
-  renderProgressMarkdown
-};
