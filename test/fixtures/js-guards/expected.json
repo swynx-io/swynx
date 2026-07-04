@@ -1,3 +1,4 @@
 {
-  "notDeadFunctions": ["reachedViaEval", "InternalWidget", "onFoo", "runTask", "calledFromHtml"]
+  "notDeadFunctions": ["reachedViaEval", "InternalWidget", "onFoo", "runTask", "calledFromHtml", "$applyDefaults", "_test"],
+  "notUnusedExports": ["usedViaProperty"]
 }
