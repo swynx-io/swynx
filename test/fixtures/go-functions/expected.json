@@ -1,0 +1,6 @@
+{
+  "deadFunctions": [
+    {"file": "main.go", "name": "deadHelper"}
+  ],
+  "notDeadFunctions": ["liveHelper", "usedByHelper", "main"]
+}

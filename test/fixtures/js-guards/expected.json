@@ -1,0 +1,3 @@
+{
+  "notDeadFunctions": ["reachedViaEval", "InternalWidget", "onFoo", "runTask", "calledFromHtml"]
+}

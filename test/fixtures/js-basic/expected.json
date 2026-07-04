@@ -1,0 +1,12 @@
+{
+  "deadFiles": ["src/orphan.js"],
+  "deadFunctions": [
+    {"file": "src/used.js", "name": "deadLocal"},
+    {"file": "src/used.js", "name": "deadArrow"}
+  ],
+  "notDeadFunctions": ["helper", "liveArrow", "used"],
+  "unusedExports": [
+    {"file": "src/used.js", "name": "neverImported"}
+  ],
+  "notUnusedExports": ["used"]
+}

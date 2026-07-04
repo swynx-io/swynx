@@ -1,0 +1,6 @@
+{
+  "deadFunctions": [
+    {"file": "app/worker.py", "name": "_dead_helper"}
+  ],
+  "notDeadFunctions": ["_live_helper", "run"]
+}

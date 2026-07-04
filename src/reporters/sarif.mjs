@@ -9,7 +9,7 @@
  * @returns {string}
  */
 export function report(results, options = {}) {
-  const { deadFiles = [], deadFunctions = [] } = results;
+  const { deadFiles = [], deadFunctions = [], unusedExports = [] } = results;
 
   const sarif = {
     $schema: 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json',
@@ -100,6 +100,32 @@ export function report(results, options = {}) {
                   tags: ['security', 'CWE-561', 'dead-code'],
                 },
               },
+              {
+                id: 'swynx/unused-export',
+                shortDescription: {
+                  text: 'CWE-561: Unused export detected',
+                },
+                fullDescription: {
+                  text: 'An exported symbol that is never imported by any other file in the project. The file itself is in use, but this export is dead weight.',
+                },
+                defaultConfiguration: {
+                  level: 'note',
+                },
+                relationships: [
+                  {
+                    target: {
+                      id: '561',
+                      guid: 'cwe-561',
+                      toolComponent: { name: 'CWE' },
+                    },
+                    kinds: ['superset'],
+                  },
+                ],
+                helpUri: 'https://cwe.mitre.org/data/definitions/561.html',
+                properties: {
+                  tags: ['security', 'CWE-561', 'dead-code'],
+                },
+              },
             ],
           },
         },
@@ -143,8 +169,8 @@ export function report(results, options = {}) {
               level,
               message: {
                 text: verdict === 'possibly-live'
-                  ? `CWE-561: File may be loaded dynamically (${Math.round((confidence?.score || 0.7) * 100)}% confidence). Review required.`
-                  : `CWE-561: File is unreachable from all entry points (${Math.round((confidence?.score || 0.95) * 100)}% confidence).`,
+                  ? `CWE-561: File may be loaded dynamically${confidence?.score != null ? ` (${Math.round(confidence.score * 100)}% confidence)` : ''}. Review required.`
+                  : `CWE-561: File is unreachable from all entry points${confidence?.score != null ? ` (${Math.round(confidence.score * 100)}% confidence)` : ''}.`,
               },
               locations: [
                 {
@@ -189,7 +215,7 @@ export function report(results, options = {}) {
             ruleId: 'swynx/unreachable-function',
             level: 'note',
             message: {
-              text: `CWE-561: ${fn.language} function "${fn.name}" is ${fn.reason === 'unexported-never-called' ? 'unexported and' : 'private and'} never called.`,
+              text: `CWE-561: ${fn.language || 'Unknown'} function "${fn.name}" is ${fn.reason === 'unexported-never-called' ? 'unexported and' : 'private and'} never called.`,
             },
             locations: [
               {
@@ -218,6 +244,40 @@ export function report(results, options = {}) {
               evidence: fn.evidence,
             },
           })),
+          ...unusedExports.flatMap((entry) =>
+            (entry.deadExports || []).map((exp) => ({
+              ruleId: 'swynx/unused-export',
+              level: 'note',
+              message: {
+                text: `CWE-561: Export "${exp.name}" is never imported by any other file.`,
+              },
+              locations: [
+                {
+                  physicalLocation: {
+                    artifactLocation: {
+                      uri: entry.file,
+                      uriBaseId: '%SRCROOT%',
+                    },
+                    region: {
+                      startLine: exp.line || 1,
+                    },
+                  },
+                },
+              ],
+              taxa: [
+                {
+                  id: '561',
+                  guid: 'cwe-561',
+                  toolComponent: { name: 'CWE' },
+                },
+              ],
+              properties: {
+                verdict: 'unused-export',
+                cwe: 'CWE-561',
+                evidence: entry.evidence,
+              },
+            }))
+          ),
         ],
       },
     ],

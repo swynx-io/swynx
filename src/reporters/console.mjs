@@ -1,6 +1,7 @@
 /**
  * Console reporter - human-readable coloured output for terminal use.
- * Frames all output as CWE-561 security findings.
+ * Written for business stakeholders, not just developers.
+ * Technical detail (CWE-561, exports, etc.) is available but secondary.
  */
 
 const ANSI = {
@@ -15,7 +16,6 @@ const ANSI = {
 
 function color(enabled) {
   if (!enabled) {
-    // Return an identity object that strips all codes
     return new Proxy({}, { get: () => (s) => s });
   }
   return Object.fromEntries(
@@ -24,44 +24,45 @@ function color(enabled) {
 }
 
 function formatBytes(bytes) {
+  if (bytes == null || bytes < 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
   const kb = bytes / 1024;
   if (kb < 1024) return `${kb.toFixed(1)} KB`;
   const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
 }
 
 /**
- * Format a verdict badge for display
+ * Confidence badge — plain English
  */
 function verdictBadge(file, c) {
   const ev = file.evidence;
-  if (!ev || !ev.confidence) return '';
+  if (!ev || !ev.confidence || ev.confidence.score == null) return '';
   const pct = Math.round(ev.confidence.score * 100);
   const verdict = file.verdict || 'unreachable';
   if (verdict === 'possibly-live') {
-    return c.yellow(`  [POSSIBLY LIVE ${pct}%]`);
+    return c.yellow(`  [NEEDS REVIEW — ${pct}% confidence]`);
   }
   if (verdict === 'partially-unreachable') {
-    return c.yellow(`  [PARTIAL ${pct}%]`);
+    return c.yellow(`  [PARTIALLY UNUSED — ${pct}% confidence]`);
   }
-  return c.green(`  [UNREACHABLE ${pct}%]`);
+  return c.dim(`  [${pct}% confidence]`);
 }
 
 /**
- * Format evidence summary for a file
+ * Evidence line — explain WHY in plain language
  */
-function evidenceSummary(file, c) {
+function evidenceLine(file, c) {
   const ev = file.evidence;
   if (!ev) return null;
   const parts = [];
   if (ev.entryPoints) {
-    parts.push(`Not reachable from ${ev.entryPoints.total} entry points`);
+    parts.push(`No code path leads to this file (checked ${ev.entryPoints.total} starting points)`);
   }
   if (ev.dynamicCheck?.matchedPattern) {
-    parts.push(`Filename matches "${ev.dynamicCheck.matchedPattern}" pattern`);
-  } else if (ev.dynamicCheck) {
-    parts.push('No dynamic loading pattern');
+    parts.push(`May be loaded at runtime via "${ev.dynamicCheck.matchedPattern}" — worth double-checking`);
   }
   return parts.length > 0 ? `     ${c.dim(parts.join('. ') + '.')}` : null;
 }
@@ -83,79 +84,91 @@ export function report(results, options = {}) {
   } = results;
 
   const deadCount = deadFiles.length;
-  const deadPct = totalFiles > 0 ? ((deadCount / totalFiles) * 100).toFixed(2) : '0.00';
+  const deadPct = totalFiles > 0 ? ((deadCount / totalFiles) * 100).toFixed(1) : '0.0';
   const deadBytes = deadFiles.reduce((sum, f) => sum + (f.size || 0), 0);
   const dfCount = (results.deadFunctions || []).length;
-  const cweCount = deadCount + dfCount;
+  const ueCount = (results.unusedExports || []).reduce((sum, f) => sum + (f.deadExports || []).length, 0);
+  const cweCount = deadCount + dfCount + ueCount;
+  const activeFiles = reachableFiles || (totalFiles - deadCount);
 
   const lines = [];
 
-  // Header — CWE-561 is the headline
+  // Header
   lines.push('');
-  lines.push(c.bold('Swynx Security Report') + c.dim(' — CWE-561 Dead Code'));
+  lines.push(c.bold('Swynx Dead Code Report'));
   lines.push('\u2550'.repeat(42));
   lines.push('');
 
   if (cweCount === 0) {
-    lines.push(c.green(`\u2713 No CWE-561 instances found across ${totalFiles} files. Clean.`));
+    if (totalFiles === 0) {
+      lines.push(c.yellow('No source files found in this directory.'));
+    } else {
+      lines.push(c.green(`\u2713 All clear — ${totalFiles.toLocaleString()} files scanned, no dead code found.`));
+    }
     lines.push('');
     return lines.join('\n');
   }
 
-  // Headline finding
-  lines.push(`  ${c.bold(c.red(`${cweCount} CWE-561 instance${cweCount !== 1 ? 's' : ''}`))} found across ${totalFiles} files`);
+  // Headline — plain English
+  const headlineParts = [];
+  if (deadCount > 0) headlineParts.push(`${deadCount} unused file${deadCount !== 1 ? 's' : ''}`);
+  if (dfCount > 0) headlineParts.push(`${dfCount} unused function${dfCount !== 1 ? 's' : ''}`);
+  if (ueCount > 0) headlineParts.push(`${ueCount} unused export${ueCount !== 1 ? 's' : ''}`);
+  lines.push(`  ${c.bold(c.red(`${headlineParts.join(', ')} found`))}`);
   lines.push('');
 
-  // Breakdown
-  lines.push(c.bold('Breakdown'));
-  lines.push(`  Unreachable files:   ${c.red(`${deadCount} (${deadPct}% of codebase)`)}`);
+  // Summary in plain language
+  lines.push(c.bold('Summary'));
+  lines.push(`  Files scanned:     ${c.cyan(totalFiles.toLocaleString())}`);
+  lines.push(`  Active files:      ${c.green(activeFiles.toLocaleString())}`);
+  lines.push(`  Unused files:      ${c.red(`${deadCount} (${deadPct}% of your codebase)`)}`);
   if (dfCount > 0) {
-    lines.push(`  Unreachable functions: ${c.red(String(dfCount))}`);
+    lines.push(`  Unused functions:  ${c.red(String(dfCount))}`);
   }
-  lines.push(`  Dead code size:      ${formatBytes(deadBytes)}`);
-  lines.push(`  Entry points tested: ${entryPoints}`);
-  lines.push(`  Reachable files:     ${c.green(String(reachableFiles))}`);
+  if (ueCount > 0) {
+    lines.push(`  Unused exports:    ${c.red(String(ueCount))}`);
+  }
+  lines.push(`  Wasted space:      ${c.red(formatBytes(deadBytes))}`);
   lines.push('');
 
-  // CWE reference
-  lines.push(c.dim('  CWE-561: "The product contains dead code, which can never be executed."'));
-  lines.push(c.dim('  https://cwe.mitre.org/data/definitions/561.html'));
+  // What this means
+  lines.push(c.dim('  These files exist in your project but nothing uses them.'));
+  lines.push(c.dim('  They add clutter, slow down builds, and increase security surface area.'));
+  lines.push(c.dim(`  Ref: CWE-561 — https://cwe.mitre.org/data/definitions/561.html`));
   lines.push('');
 
-  // Dead files list
-  lines.push(c.bold('Findings'));
-  lines.push('\u2500'.repeat(8));
+  // Findings list
+  if (deadCount > 0) {
+    lines.push(c.bold('Unused Files'));
+    lines.push('\u2500'.repeat(12));
+  }
 
   deadFiles.forEach((file, i) => {
     const meta = [];
     if (file.size != null) meta.push(formatBytes(file.size));
     if (file.lines != null) meta.push(`${file.lines} lines`);
-    const metaStr = meta.length ? ` (${meta.join(', ')})` : '';
+    const metaStr = meta.length ? ` ${c.dim(`(${meta.join(', ')})`)}` : '';
     const badge = verdictBadge(file, c);
 
-    lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(file.path)}${c.dim(metaStr)}${badge}`);
+    lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(file.path)}${metaStr}${badge}`);
 
-    if (file.exports && file.exports.length > 0) {
-      lines.push(`     ${c.dim('Exports:')} ${file.exports.join(', ')}`);
-    }
-
-    // Evidence summary
-    const evLine = evidenceSummary(file, c);
-    if (evLine) lines.push(evLine);
+    // Evidence — why we think it's unused
+    const ev = evidenceLine(file, c);
+    if (ev) lines.push(ev);
 
     // Verify hint for possibly-live files
-    if (file.verdict === 'possibly-live' && file.evidence?.dynamicCheck?.matchedPattern) {
-      lines.push(`     ${c.dim('Verify:')} grep -r "${file.evidence.dynamicCheck.matchedPattern}" --include="*.ts"`);
+    if (file.verdict === 'possibly-live') {
+      lines.push(`     ${c.dim('Action: Check if this file is loaded dynamically before deleting.')}`);
     }
 
     if (file.aiQualification) {
       const ai = file.aiQualification;
       if (ai.error) {
-        lines.push(`     ${c.dim('AI:')} ${c.red(`error: ${ai.error}`)}`);
+        lines.push(`     ${c.dim('AI check:')} ${c.red(`error: ${ai.error}`)}`);
       } else {
         const pct = Math.round(ai.confidence * 100);
         const confColor = pct >= 80 ? c.red : pct >= 50 ? c.yellow : c.green;
-        lines.push(`     ${c.dim('AI:')} ${confColor(`${pct}% dead`)} ${c.dim('\u00b7')} ${ai.recommendation}`);
+        lines.push(`     ${c.dim('AI verdict:')} ${confColor(`${pct}% likely unused`)} — ${ai.recommendation}`);
         if (ai.explanation) {
           lines.push(`     ${c.dim(`"${ai.explanation}"`)}`);
         }
@@ -167,31 +180,58 @@ export function report(results, options = {}) {
   const deadFunctions = results.deadFunctions || [];
   if (deadFunctions.length > 0) {
     lines.push('');
-    lines.push(c.bold('Unreachable Functions'));
-    lines.push('\u2500'.repeat(20));
+    lines.push(c.bold('Unused Functions'));
+    lines.push('\u2500'.repeat(16));
+    lines.push(c.dim('  These functions exist but are never called anywhere.'));
+    lines.push('');
 
     deadFunctions.forEach((fn, i) => {
       const meta = [];
       if (fn.lineCount) meta.push(`${fn.lineCount} lines`);
       if (fn.sizeBytes) meta.push(formatBytes(fn.sizeBytes));
-      const metaStr = meta.length ? ` (${meta.join(', ')})` : '';
-      lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(`${fn.file}:${fn.name}`)} ${c.dim(`line ${fn.line}`)}${c.dim(metaStr)}`);
+      const metaStr = meta.length ? ` ${c.dim(`(${meta.join(', ')})`)}` : '';
+      lines.push(`  ${c.dim(`${i + 1}.`)} ${c.yellow(`${fn.file}:`)}${c.bold(fn.name)} ${c.dim(`line ${fn.line}`)}${metaStr}`);
     });
+  }
+
+  // Unused exports (file is alive, but some of its exports are never imported)
+  const unusedExports = results.unusedExports || [];
+  if (unusedExports.length > 0) {
+    lines.push('');
+    lines.push(c.bold('Unused Exports'));
+    lines.push('─'.repeat(14));
+    lines.push(c.dim('  These files are in use, but some of their exports are never imported anywhere.'));
+    lines.push('');
+
+    let ueIdx = 0;
+    for (const entry of unusedExports) {
+      for (const exp of entry.deadExports) {
+        ueIdx++;
+        lines.push(`  ${c.dim(`${ueIdx}.`)} ${c.yellow(`${entry.file}:`)}${c.bold(exp.name)} ${c.dim(`line ${exp.line}`)}`);
+      }
+    }
   }
 
   // AI summary
   if (results.aiSummary) {
     const ai = results.aiSummary;
     lines.push('');
-    lines.push(c.bold('AI Qualification') + c.dim(` (${ai.model})`));
+    lines.push(c.bold('AI Verification') + c.dim(` (${ai.model})`));
     const parts = [];
-    if (ai.confirmedDead) parts.push(`${ai.confirmedDead} confirmed dead`);
-    if (ai.uncertain) parts.push(`${ai.uncertain} uncertain`);
-    if (ai.likelyAlive) parts.push(`${ai.likelyAlive} likely alive`);
-    if (ai.falsePositives) parts.push(`${ai.falsePositives} false positive(s)`);
+    if (ai.confirmedDead) parts.push(`${ai.confirmedDead} confirmed unused`);
+    if (ai.uncertain) parts.push(`${ai.uncertain} need manual review`);
+    if (ai.likelyAlive) parts.push(`${ai.likelyAlive} may actually be in use`);
+    if (ai.falsePositives) parts.push(`${ai.falsePositives} false alarm(s)`);
     lines.push(`  ${parts.join(', ')}`);
-    lines.push(`  ${c.dim(`${ai.filesQualified} files qualified in ${(ai.duration / 1000).toFixed(1)}s`)}`);
+    lines.push(`  ${c.dim(`${ai.filesQualified} files checked in ${(ai.duration / 1000).toFixed(1)}s`)}`);
   }
+
+  // What to do next
+  lines.push('');
+  lines.push(c.bold('What to do'));
+  lines.push(`  ${c.dim('Review the files above and delete what you don\'t need.')}`);
+  lines.push(`  ${c.dim('Run')} swynx scan . --fix ${c.dim('to automatically remove them (with rollback).')}`);
+  lines.push(`  ${c.dim('Run')} swynx scan . --fix --dry-run ${c.dim('to preview what would be removed.')}`);
 
   lines.push('');
   return lines.join('\n');

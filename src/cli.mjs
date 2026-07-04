@@ -9,7 +9,7 @@ const program = new Command();
 
 program
   .name('swynx')
-  .description('CWE-561 dead code security analysis')
+  .description('Find and remove unused code in your projects')
   .version('0.1.0');
 
 /**
@@ -18,23 +18,36 @@ program
 function toReporterShape(scanResult) {
   const { deadFiles, summary } = scanResult;
   return {
-    totalFiles: summary.totalFiles,
-    entryPoints: summary.entryPoints,
-    reachableFiles: summary.reachableFiles,
-    deadRate: summary.deadRate,
-    totalDeadBytes: summary.totalDeadBytes,
-    languages: summary.languages,
+    totalFiles: summary.totalFiles || 0,
+    entryPoints: summary.entryPoints || 0,
+    reachableFiles: summary.reachableFiles || 0,
+    deadRate: summary.deadRate || '0.00%',
+    totalDeadBytes: summary.totalDeadBytes || 0,
+    languages: summary.languages || {},
     deadFiles: deadFiles.map(f => ({
-      path: f.file,
-      size: f.size,
-      lines: f.lines,
-      language: f.language,
-      exports: (f.exports || []).map(e => e.name),
+      path: f.file || f.relativePath || f.path || 'unknown',
+      size: f.size || 0,
+      lines: f.lines || 0,
+      language: f.language || 'unknown',
+      exports: (f.exports || []).map(e => typeof e === 'string' ? e : (e.name || 'default')),
       verdict: f.verdict || null,
       cwe: f.cwe || 'CWE-561',
       evidence: f.evidence || null
     })),
-    deadFunctions: scanResult.deadFunctions || []
+    deadFunctions: scanResult.deadFunctions || [],
+    unusedExports: (scanResult.partiallyDeadFiles || []).map(f => ({
+      file: f.file || f.relativePath,
+      language: f.language || 'javascript',
+      deadExports: (f.exports || []).filter(e => e.status === 'dead').map(e => ({
+        name: e.name,
+        line: e.line || 0,
+        type: e.type || 'unknown'
+      })),
+      totalExports: f.summary?.totalExports || (f.exports || []).length,
+      liveExports: f.summary?.liveExports || 0,
+      evidence: f.evidence || null,
+      recommendation: f.recommendation || null
+    })).filter(f => f.deadExports.length > 0)
   };
 }
 
@@ -43,25 +56,25 @@ function toReporterShape(scanResult) {
 program
   .command('scan')
   .argument('[path]', 'project root to scan', '.')
-  .description('Scan a project for CWE-561 dead code security weaknesses')
-  .option('--format <type>', 'output format (console|json|markdown|sarif)', 'console')
-  .option('--output <file>', 'write report to a file instead of stdout')
-  .option('--ci', 'exit with code 1 when CWE-561 instances are found')
-  .option('--verbose', 'show extra diagnostic output')
-  .option('--no-cache', 'ignore cached scan data')
-  .option('--qualify', 'run AI qualification on dead files via Ollama')
-  .option('--model <name>', 'Ollama model to use', 'qwen2.5-coder:3b')
-  .option('--ollama-url <url>', 'Ollama API endpoint', 'http://localhost:11434')
-  .option('--qualify-limit <n>', 'max dead files to qualify', (v) => parseInt(v, 10), 50)
-  .option('--auto-learn', 'auto-feed AI false positives into knowledge base')
-  .option('--dry-run', 'preview what would be learned/fixed without writing')
-  .option('--fix', 'automatically remove dead files after scan')
-  .option('--min-confidence <n>', 'minimum AI confidence for --fix (0.0-1.0)', (v) => parseFloat(v), 0)
-  .option('--no-import-clean', 'skip cleaning imports from live files')
-  .option('--no-barrel-clean', 'skip cleaning barrel file re-exports')
-  .option('--no-git-commit', 'skip creating a git commit after fix')
-  .option('--include-uncertain', 'include possibly-live files in --fix (default: skip them)')
-  .option('--confirm', 'require confirmation before fixing (default with --fix)')
+  .description('Scan a project and find unused code')
+  .option('--format <type>', 'report format: console, json, markdown, or sarif', 'console')
+  .option('--output <file>', 'save the report to a file')
+  .option('--ci', 'fail the build if unused code is found (for CI/CD pipelines)')
+  .option('--verbose', 'show detailed progress and diagnostics')
+  .option('--no-cache', 'force a fresh scan (ignore previous results)')
+  .option('--qualify', 'use AI to double-check results (requires Ollama)')
+  .option('--model <name>', 'AI model to use for qualification', 'qwen2.5-coder:3b')
+  .option('--ollama-url <url>', 'Ollama server address', 'http://localhost:11434')
+  .option('--qualify-limit <n>', 'max files to AI-check', (v) => parseInt(v, 10), 50)
+  .option('--auto-learn', 'automatically learn from AI false alarms')
+  .option('--dry-run', 'preview changes without actually making them')
+  .option('--fix', 'delete unused files after scanning (with backup)')
+  .option('--min-confidence <n>', 'only fix files above this confidence (0.0-1.0)', (v) => parseFloat(v), 0)
+  .option('--no-import-clean', 'skip updating references in other files')
+  .option('--no-barrel-clean', 'skip updating index/barrel files')
+  .option('--no-git-commit', 'skip creating a git commit after cleanup')
+  .option('--include-uncertain', 'also remove files that might still be in use')
+  .option('--confirm', 'ask for confirmation before deleting (default with --fix)')
   .action(async (path, opts) => {
     const root = resolve(path);
 
@@ -135,10 +148,18 @@ program
       console.log(output);
     }
 
-    if (opts.ci && results.deadFiles.length > 0) {
-      const cweCount = results.deadFiles.length + (results.deadFunctions || []).length;
-      console.error(`CWE-561: ${cweCount} instance${cweCount !== 1 ? 's' : ''} found — failing CI gate`);
-      process.exit(1);
+    if (opts.ci) {
+      const fileCount = results.deadFiles.length;
+      const fnCount = (results.deadFunctions || []).length;
+      const expCount = (results.unusedExports || []).reduce((sum, f) => sum + (f.deadExports || []).length, 0);
+      // Unused exports are advisory only — they never fail the build
+      if (fileCount + fnCount > 0) {
+        console.error(`${fileCount + fnCount} dead code issue${fileCount + fnCount !== 1 ? 's' : ''} found (${fileCount} files, ${fnCount} functions) — build failed (CWE-561)`);
+        process.exit(1);
+      }
+      if (expCount > 0) {
+        console.error(`${expCount} unused export${expCount !== 1 ? 's' : ''} found (advisory — not failing the build)`);
+      }
     }
 
     // Apply fix if requested
@@ -149,22 +170,22 @@ program
       if (!opts.dryRun && opts.confirm !== false) {
         const deadCount = results.deadFiles.length;
         if (deadCount === 0) {
-          console.log('\nNo dead files to remove.');
+          console.log('\nNo unused files to remove.');
           return;
         }
 
-        console.log(`\n${deadCount} dead file${deadCount > 1 ? 's' : ''} will be removed.`);
+        console.log(`\n${deadCount} unused file${deadCount > 1 ? 's' : ''} will be removed (a backup is created automatically).`);
 
         const answer = await new Promise((res) => {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
-          rl.question('Proceed with fix? [y/N] ', (ans) => {
+          rl.question('Go ahead? [y/N] ', (ans) => {
             rl.close();
             res(ans.trim().toLowerCase());
           });
         });
 
         if (answer !== 'y' && answer !== 'yes') {
-          console.log('Fix cancelled.');
+          console.log('Cancelled — no files were changed.');
           return;
         }
       }
@@ -194,7 +215,7 @@ program
 program
   .command('verify')
   .argument('[path]', 'project root to verify', '.')
-  .description('Re-scan a project and verify CWE-561 status')
+  .description('Re-scan and check if previously found issues are fixed')
   .option('--verbose', 'show extra diagnostic output')
   .action(async (path, opts) => {
     const root = resolve(path);
@@ -222,7 +243,7 @@ program
 program
   .command('qualify')
   .argument('<file>', 'scan output JSON file to re-qualify')
-  .description('Re-qualify saved CWE-561 findings without re-scanning')
+  .description('Re-check saved results with AI without re-scanning')
   .option('--format <type>', 'output format (console|json|markdown|sarif)', 'console')
   .option('--output <file>', 'write report to a file instead of stdout')
   .option('--model <name>', 'Ollama model to use', 'qwen2.5-coder:3b')
@@ -379,9 +400,9 @@ learn
 program
   .command('rollback')
   .argument('[path]', 'project root', '.')
-  .description('Rollback the most recent --fix operation')
-  .option('--list', 'list available snapshots')
-  .option('--snapshot <id>', 'restore a specific snapshot by ID')
+  .description('Undo the most recent cleanup (restore deleted files)')
+  .option('--list', 'show available restore points')
+  .option('--snapshot <id>', 'restore a specific backup by ID')
   .action(async (path, opts) => {
     const root = resolve(path);
     const { rollback, listRollbackSnapshots } = await import('./fixer/apply-fix.mjs');
@@ -389,17 +410,17 @@ program
     if (opts.list) {
       const snapshots = await listRollbackSnapshots(root);
       if (snapshots.length === 0) {
-        console.log('No snapshots available.');
+        console.log('No restore points available.');
         return;
       }
 
-      console.log('\nAvailable snapshots:\n');
+      console.log('\nAvailable restore points:\n');
       for (const snap of snapshots) {
         const date = new Date(snap.createdAt).toLocaleString();
-        const status = snap.status === 'restored' ? ' (restored)' : '';
+        const status = snap.status === 'restored' ? ' (already restored)' : '';
         console.log(`  ${snap.snapshotId}${status}`);
-        console.log(`    Created: ${date}`);
-        console.log(`    Files: ${snap.fileCount}`);
+        console.log(`    Date:  ${date}`);
+        console.log(`    Files: ${snap.fileCount} backed up`);
         console.log('');
       }
       return;
@@ -408,15 +429,15 @@ program
     const result = await rollback(root, opts.snapshot);
 
     if (result.success) {
-      console.log(`\n✓ Rolled back ${result.restored.length} file(s)`);
+      console.log(`\n✓ Restored ${result.restored.length} file${result.restored.length !== 1 ? 's' : ''}`);
       if (result.restored.length > 0 && result.restored.length <= 10) {
         for (const file of result.restored) {
           console.log(`  + ${file}`);
         }
       }
-      console.log('\nNote: You may need to run "git checkout ." to undo the commit.');
+      console.log('\nYour files are back. Run "git checkout ." if you also need to undo the git commit.');
     } else {
-      console.error(`\n✗ Rollback failed: ${result.error}`);
+      console.error(`\nRestore failed: ${result.error}`);
       process.exit(1);
     }
   });

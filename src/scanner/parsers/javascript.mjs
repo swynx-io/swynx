@@ -605,6 +605,17 @@ function extractMethodInfo(node, content, className) {
     async: node.async || false,
     generator: node.generator || false,
     static: node.static || false,
+    // TS access modifier ('private' | 'protected' | 'public' | null) — null for plain JS
+    accessibility: node.accessibility || null,
+    // ES private methods (#name) are compiler-enforced file-private
+    isPrivateName: node.key?.type === 'PrivateName',
+    decorators: (node.decorators || []).map(dec => {
+      const expr = dec.expression;
+      const decName = expr?.type === 'CallExpression'
+        ? (expr.callee?.name || expr.callee?.property?.name)
+        : expr?.type === 'MemberExpression' ? expr.property?.name : expr?.name;
+      return decName ? { name: decName } : null;
+    }).filter(Boolean),
     params: [],
     signature: ''
   };

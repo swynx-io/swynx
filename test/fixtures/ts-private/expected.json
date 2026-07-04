@@ -1,0 +1,8 @@
+{
+  "deadFiles": [],
+  "deadFunctions": [
+    {"file": "src/service.ts", "name": "#deadEs"},
+    {"file": "src/service.ts", "name": "deadTs"}
+  ],
+  "notDeadFunctions": ["#liveEs", "liveTs", "run", "liveGetter"]
+}
